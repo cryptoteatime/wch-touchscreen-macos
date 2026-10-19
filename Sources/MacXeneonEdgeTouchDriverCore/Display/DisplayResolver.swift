@@ -140,10 +140,9 @@ public final class DisplayResolver {
     /// Returns all compatible displays from supplied snapshots.
     public func matchingDisplays(from displays: [DisplaySnapshot]) -> [DisplaySnapshot] {
         if let profiles {
-            return displays.filter { display in
-                let matches = profiles.filter { $0.touchEnabled && $0.matches(display) }
-                return matches.count == 1 && displays.filter({ matches[0].matches($0) }).count == 1
-            }.sorted { $0.bounds.minX == $1.bounds.minX ? $0.bounds.minY < $1.bounds.minY : $0.bounds.minX < $1.bounds.minX }
+            let resolved = MonitorProfileRouting.resolved(profiles, displays: displays)
+            return profiles.filter(\.touchEnabled).compactMap { resolved[$0.displayUUID] }
+                .sorted { $0.bounds.minX == $1.bounds.minX ? $0.bounds.minY < $1.bounds.minY : $0.bounds.minX < $1.bounds.minX }
         }
         let vendorModelMatches = displays.filter { display in
             display.vendorNumber == configuration.vendorNumber &&

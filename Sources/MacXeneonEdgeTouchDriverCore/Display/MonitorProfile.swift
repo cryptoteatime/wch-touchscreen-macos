@@ -40,6 +40,9 @@ public struct MonitorProfile: Codable, Equatable {
         matches(uuid: display.uuid, vendor: display.vendorNumber, model: display.modelNumber,
                 serial: display.serialNumber, builtIn: display.builtIn)
     }
+    func sameHardware(_ display: DisplaySnapshot) -> Bool {
+        !display.builtIn && vendor == display.vendorNumber && model == display.modelNumber && serial == display.serialNumber
+    }
     func accepts(_ identity: MonitorBrightnessIdentity) -> Bool {
         guard brightnessConnection != .off, vendor == identity.vendor, model == identity.model else { return false }
         switch identity.transport {
@@ -70,10 +73,28 @@ struct MonitorProfileList: Decodable {
 /// Pure connection selection, shared by discovery and the brightness controller.
 /// A route requires a unique profile and endpoint; list order is never evidence.
 enum MonitorProfileRouting {
+    /// Recreated video UUIDs may use a unique hardware fallback, but only if
+    /// both the saved and live sets prove that descriptor is unambiguous.
+    static func resolved(_ profiles: [MonitorProfile], displays: [DisplaySnapshot]) -> [String: DisplaySnapshot] {
+        guard MonitorProfile.valid(profiles) else { return [:] }
+        var proposals: [(String, DisplaySnapshot)] = []
+        for profile in profiles {
+            let exact = displays.filter { profile.matches($0) }
+            if exact.count == 1 { proposals.append((profile.displayUUID, exact[0])); continue }
+            guard exact.isEmpty else { continue }
+            let hardware = displays.filter { profile.sameHardware($0) }
+            let saved = profiles.filter { $0.vendor == profile.vendor && $0.model == profile.model && $0.serial == profile.serial }
+            if saved.count == 1 && hardware.count == 1 { proposals.append((profile.displayUUID, hardware[0])) }
+        }
+        let uses = Dictionary(grouping: proposals, by: { $0.1.displayID }).mapValues(\.count)
+        return Dictionary(uniqueKeysWithValues: proposals.filter { uses[$0.1.displayID] == 1 })
+    }
+
     static func selected(_ profiles: [MonitorProfile], displays: [DisplaySnapshot],
                          native: [MonitorBrightnessIdentity], displayLink: [MonitorBrightnessIdentity]) -> [MonitorBrightnessIdentity: MonitorProfile] {
         var proposals: [(MonitorBrightnessIdentity, MonitorProfile)] = []
-        for profile in profiles where displays.filter({ profile.matches($0) }).count == 1 {
+        let live = resolved(profiles, displays: displays)
+        for profile in profiles where live[profile.displayUUID] != nil {
             let direct = native.filter { profile.accepts($0) }
             let linked = displayLink.filter { profile.accepts($0) }
             // Automatic prefers a uniquely identified native route. A native
@@ -87,8 +108,9 @@ enum MonitorProfileRouting {
     static func needsDisplayLink(_ profiles: [MonitorProfile], displays: [DisplaySnapshot],
                                  native: [MonitorBrightnessIdentity]) -> Bool {
         let selectedNative = selected(profiles, displays: displays, native: native, displayLink: [])
+        let live = resolved(profiles, displays: displays)
         return profiles.contains { profile in
-            displays.filter({ profile.matches($0) }).count == 1 &&
+            live[profile.displayUUID] != nil &&
             (profile.brightnessConnection == .displayLink ||
              (profile.brightnessConnection == .automatic && !selectedNative.values.contains(profile)))
         }
@@ -100,12 +122,14 @@ enum MonitorProfileDiscovery {
     static func profiles(configuration: DriverConfiguration, native: [MonitorBrightnessIdentity]) -> [MonitorProfile] {
         var profiles = configuration.monitors ?? []
         let legacy = DisplayResolver(configuration: configuration.display).matchingDisplays()
+        let resolved = MonitorProfileRouting.resolved(profiles, displays: DisplayResolver.activeDisplaySnapshots())
         for screen in NSScreen.screens {
             guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { continue }
             let id = number.uint32Value
             guard CGDisplayIsBuiltin(id) == 0, let uuidRef = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { continue }
             let uuid = CFUUIDCreateString(nil, uuidRef) as String
-            guard !profiles.contains(where: { $0.displayUUID.lowercased() == uuid.lowercased() }) else { continue }
+            guard !resolved.values.contains(where: { $0.displayID == id }),
+                  !profiles.contains(where: { $0.displayUUID.lowercased() == uuid.lowercased() }) else { continue }
             let managed = configuration.monitors == nil && legacy.contains { $0.displayID == id }
             let vendor = CGDisplayVendorNumber(id), model = CGDisplayModelNumber(id)
             let candidates = native.filter { $0.vendor == vendor && $0.model == model && $0.name == screen.localizedName }

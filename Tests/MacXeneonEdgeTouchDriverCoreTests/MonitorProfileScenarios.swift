@@ -63,6 +63,22 @@ func exerciseMonitorProfiles(_ check: (Bool, String) -> Void) throws {
     check(MonitorProfileRouting.selected([a, b], displays: [da], native: [na, nb], displayLink: [dlb]).count == 1, "Disconnected profiles cannot write to an endpoint")
     check(MonitorProfileRouting.selected([a], displays: [da], native: [na, na], displayLink: []).isEmpty, "Ambiguous native endpoints are skipped")
     check(MonitorProfileRouting.selected([a, a], displays: [da], native: [na], displayLink: []).isEmpty, "One endpoint cannot be assigned to two profiles")
+    var recreated = b; recreated.displayUUID = "00000000-0000-4000-8000-000000000003"
+    let recreatedDisplay = display(recreated, id: 77)
+    let restored = MonitorProfileRouting.resolved([a, b], displays: [da, recreatedDisplay])
+    check(restored[b.displayUUID]?.displayID == 77, "A recreated video UUID uses a unique saved and live hardware descriptor")
+    check(MonitorProfileRouting.selected([a, b], displays: [da, recreatedDisplay], native: [na], displayLink: [dlb])[dlb] == b,
+          "Recreated DisplayLink connections keep the saved profile brightness identity")
+    var duplicateHardware = b; duplicateHardware.displayUUID = "00000000-0000-4000-8000-000000000004"
+    check(MonitorProfileRouting.resolved([b, duplicateHardware], displays: [recreatedDisplay]).isEmpty,
+          "Two saved identical monitors cannot claim one recreated connection")
+    check(MonitorProfileRouting.resolved([b], displays: [recreatedDisplay, display(duplicateHardware, id: 78)]).isEmpty,
+          "Two live identical monitors cannot claim one saved profile")
+    let exactWithOtherMissing = MonitorProfileRouting.resolved([b, duplicateHardware], displays: [db])
+    check(exactWithOtherMissing.count == 1 && exactWithOtherMissing[b.displayUUID]?.displayID == 3,
+          "An offline identical profile cannot steal the surviving exact match")
+    check(!MonitorProfileRouting.needsDisplayLink([a], displays: [da], native: [na]),
+          "Hardware fallback does not activate DisplayLink for an established native route")
     check(a.follows(global: true) && !a.follows(global: false) && !b.follows(global: true), "Global and independent behavior differ per monitor")
     b.brightnessBehavior = .follow
     check(b.follows(global: false), "A per-monitor follow override works when global follow is off")

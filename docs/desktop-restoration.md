@@ -30,7 +30,7 @@ Fingerprints are private salted hashes stored locally. Readable titles, document
 
 ## Limits
 
-- Individual monitor profiles support one or more selected external displays. All profiles with touch or brightness enabled must be connected before learning a desktop. Legacy model-based configurations require a built-in display and at least two matching external screens.
+- Desktop memory requires a built-in display. Individual monitor profiles support one or more selected external displays; all profiles with touch or brightness enabled must be connected before learning a desktop. Legacy model-based configurations require at least two matching external screens.
 - The complete saved monitor set must be present. Stable display identifiers and a unique hardware fallback accommodate changed DisplayLink IDs; ambiguous or different sets are not guessed.
 - Multiple indistinguishable windows, minimized or full-screen windows, and windows that do not reopen within the waiting period are skipped.
 - Apps may enforce minimum window sizes or refuse Accessibility placement. Desktop Layout Status reports failures. WCH retains the snapshot after placement errors rather than learning the failed arrangement.

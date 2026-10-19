@@ -5,7 +5,7 @@ import Foundation
 final class MonitorBrightnessController {
     private let queue = DispatchQueue(label: "wch.monitor-brightness", qos: .utility)
     private let native = NativeMonitorBrightness()
-    private let displayLink = DisplayLinkMonitorBrightness()
+    private let displayLink: DisplayLinkMonitorBrightness
     private let vendor: UInt32?
     private let model: UInt32?
     private let profiles: [MonitorProfile]?
@@ -32,6 +32,7 @@ final class MonitorBrightnessController {
     init(configuration: DriverConfiguration, url: URL = defaultURL()) {
         vendor = configuration.display.vendorNumber; model = configuration.display.modelNumber
         profiles = configuration.monitors
+        displayLink = DisplayLinkMonitorBrightness(profiles: configuration.monitors)
         self.url = url
         var value = MonitorBrightnessPreferences()
         if FileManager.default.fileExists(atPath: url.path) {
@@ -252,8 +253,9 @@ final class MonitorBrightnessController {
         if let level = native.builtInLevel() { result["builtInPercent"] = Int((level * 100).rounded()) }
         if let profiles {
             let displays = DisplayResolver.activeDisplaySnapshots()
+            let resolved = MonitorProfileRouting.resolved(profiles, displays: displays)
             result["profiles"] = profiles.map { profile -> [String: Any] in
-                ["name": profile.name, "connected": displays.contains { profile.matches($0) },
+                ["name": profile.name, "connected": resolved[profile.displayUUID] != nil,
                  "touchEnabled": profile.touchEnabled, "brightnessConnection": profile.brightnessConnection.rawValue,
                  "brightnessBehavior": profile.brightnessBehavior.rawValue,
                  "activeTransport": routes.first { $0.value == profile }?.key.transport.rawValue ?? "unavailable"]

@@ -160,9 +160,12 @@ final class DesktopLayoutController {
     private func canLearn(_ screens: [DesktopScreen]) -> Bool {
         if let profiles {
             let selected = profiles.filter { $0.touchEnabled || $0.brightnessConnection != .off }
-            return !selected.isEmpty && selected.allSatisfy { profile in
-                screens.filter { profile.matches(uuid: $0.uuid, vendor: $0.vendor, model: $0.model, serial: $0.serial, builtIn: $0.builtIn) }.count == 1
-            } && screens.allSatisfy { CGDisplayMirrorsDisplay($0.runtimeID) == kCGNullDirectDisplay }
+            let snapshots = screens.map { DisplaySnapshot(displayID: $0.runtimeID, vendorNumber: $0.vendor, modelNumber: $0.model,
+                serialNumber: $0.serial, bounds: $0.frame, pixelsWide: $0.pixelWidth, pixelsHigh: $0.pixelHeight,
+                rotationDegrees: $0.rotation, uuid: $0.uuid, builtIn: $0.builtIn) }
+            let resolved = MonitorProfileRouting.resolved(profiles, displays: snapshots)
+            return screens.filter(\.builtIn).count == 1 && !selected.isEmpty && selected.allSatisfy { resolved[$0.displayUUID] != nil } &&
+                screens.allSatisfy { CGDisplayMirrorsDisplay($0.runtimeID) == kCGNullDirectDisplay }
         }
         return screens.contains(where: \.builtIn) && screens.filter { !$0.builtIn && $0.vendor == vendor && $0.model == model }.count >= 2 &&
         screens.allSatisfy { CGDisplayMirrorsDisplay($0.runtimeID) == kCGNullDirectDisplay }

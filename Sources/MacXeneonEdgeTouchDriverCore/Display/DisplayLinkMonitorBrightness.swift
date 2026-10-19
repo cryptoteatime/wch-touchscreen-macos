@@ -10,6 +10,7 @@ final class DisplayLinkMonitorBrightness {
         var identity: MonitorBrightnessIdentity
         var connection: String
         var persistentID: String
+        var observedDisplayUUID: String
         var reportedLevel: Double?
     }
     var onUpdate: (() -> Void)?
@@ -20,6 +21,9 @@ final class DisplayLinkMonitorBrightness {
     private var receivedAt: TimeInterval = 0
     private var results: [String: (Double, Int, TimeInterval)] = [:]
     private var active = false
+    private let profiles: [MonitorProfile]?
+
+    init(profiles: [MonitorProfile]? = nil) { self.profiles = profiles }
 
     static var managerRunning: Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: "com.displaylink.DisplayLinkUserAgent").isEmpty
@@ -47,8 +51,10 @@ final class DisplayLinkMonitorBrightness {
         lock.lock(); defer { lock.unlock() }
         guard active, Self.managerRunning, ProcessInfo.processInfo.systemUptime - receivedAt < 8 else { return [] }
         return list.filter { item in
-            guard let id = UInt32(item.connection) else { return false }
-            return CGDisplayIsOnline(id) != 0 && CGDisplayIsBuiltin(id) == 0
+            guard let id = UInt32(item.connection), CGDisplayIsOnline(id) != 0, CGDisplayIsBuiltin(id) == 0,
+                  CGDisplayVendorNumber(id) == item.identity.vendor, CGDisplayModelNumber(id) == item.identity.model,
+                  let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return false }
+            return (CFUUIDCreateString(nil, uuid) as String) == item.observedDisplayUUID
         }
     }
     func set(_ endpoint: Endpoint, level: Double) -> Bool {
@@ -67,6 +73,7 @@ final class DisplayLinkMonitorBrightness {
 
     private func receiveList(_ notification: Notification) {
         guard let data = data(notification), let records = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], records.count <= 16 else { return }
+        let resolved = MonitorProfileRouting.resolved(profiles ?? [], displays: DisplayResolver.activeDisplaySnapshots())
         let entries: [Endpoint] = records.compactMap { item -> Endpoint? in
             guard let idNumber = item["CGID"] as? NSNumber, idNumber.int64Value > 0, idNumber.uint64Value <= UInt32.max,
                   let name = item["name"] as? String, let persistent = item["persistentDisplayId"] as? String,
@@ -74,10 +81,14 @@ final class DisplayLinkMonitorBrightness {
             let id = idNumber.uint32Value
             guard CGDisplayIsOnline(id) != 0, CGDisplayIsBuiltin(id) == 0,
                   let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return nil }
-            let identity = MonitorBrightnessIdentity(transport: .displayLink, key: "displaylink:" + (CFUUIDCreateString(nil, uuid) as String),
+            // Keep the saved profile identity while refreshing the vendor's
+            // current connection/persistent ID for every hardware write.
+            let savedUUID = resolved.first { $0.value.displayID == id }?.key
+            let identity = MonitorBrightnessIdentity(transport: .displayLink, key: "displaylink:" + (savedUUID ?? (CFUUIDCreateString(nil, uuid) as String)),
                 name: name, vendor: CGDisplayVendorNumber(id), model: CGDisplayModelNumber(id))
             guard identity.isValid else { return nil }
-            return Endpoint(identity: identity, connection: String(id), persistentID: persistent, reportedLevel: level(item["brightness"]))
+            return Endpoint(identity: identity, connection: String(id), persistentID: persistent,
+                observedDisplayUUID: CFUUIDCreateString(nil, uuid) as String, reportedLevel: level(item["brightness"]))
         }
         let groups = Dictionary(grouping: entries, by: \.identity)
         lock.lock()

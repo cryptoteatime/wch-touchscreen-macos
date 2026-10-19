@@ -7,6 +7,7 @@
 - Supports global, per-monitor following, and independent brightness levels while retaining saved targets and legacy configurations.
 - Extends desktop layout learning to one or more individually selected external monitors.
 - Validates explicit identities and skips ambiguous endpoints. Malformed monitor profiles preserve unrelated settings and pause monitor selection.
+- Preserves profiles and brightness targets when an adapter recreates a video UUID, using a hardware fallback only when both saved and live identities are unique.
 - Simplifies user documentation and release notes; adds mixed-monitor routing and persistence regression coverage.
 
 ## 1.3.0 — 2026-10-19

@@ -62,9 +62,10 @@ final class MonitorProfilesController: NSObject {
     private func rebuildMenu() {
         monitor.removeAllItems()
         let displays = DisplayResolver.activeDisplaySnapshots()
+        let resolved = MonitorProfileRouting.resolved(profiles, displays: displays)
         for profile in profiles {
-            let online = displays.contains { profile.matches($0) }
-            let location = displays.first { profile.matches($0) }.map { " · x=\(Int($0.bounds.minX)), y=\(Int($0.bounds.minY))" } ?? ""
+            let online = resolved[profile.displayUUID] != nil
+            let location = resolved[profile.displayUUID].map { " · x=\(Int($0.bounds.minX)), y=\(Int($0.bounds.minY))" } ?? ""
             monitor.addItem(withTitle: profile.name + (online ? location : " · disconnected"))
         }
         monitor.selectItem(at: 0)

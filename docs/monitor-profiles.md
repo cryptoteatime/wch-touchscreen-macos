@@ -25,7 +25,9 @@ Enable brightness control from **WCH → Monitor Brightness**. Per-monitor follo
 
 ## Identity and pairing
 
-Profiles retain the display UUID, public vendor/model, serial, and available native brightness identity locally. WCH skips missing or ambiguous identities. Matching does not depend on resolution, portrait orientation, or the current display number. A different cable path or adapter can create a new identity; select the newly detected display and pair it when necessary.
+Profiles retain the display UUID, public vendor/model, serial, and available native brightness identity locally. If an adapter recreates a video UUID, WCH accepts a hardware fallback only when that vendor/model/serial combination is unique in both the saved and connected sets. DisplayLink brightness targets keep their original profile identity while writes use the current connection identifier. Ambiguous identities are skipped.
+
+Matching does not depend on resolution, portrait orientation, or the current display number. A different cable path or adapter can still require selecting the newly detected display and pairing again.
 
 USB touch pairing remains separate from video selection. This driver supports the tested single-contact WCH **27C0:0859** protocol. Adding a display profile does not implement other touch controller protocols or multi-finger gestures. Identical displays without distinguishable brightness endpoints may be unavailable for brightness control.
 
@@ -33,6 +35,6 @@ USB touch pairing remains separate from video selection. This driver supports th
 
 The older `display` vendor/model setting remains supported until you save individual monitor profiles. On first opening, currently connected monitors matching that legacy setting are selected automatically. Other detected screens start with touch and brightness off. Saving an empty profile list disables monitor selection rather than falling back to the old model filter.
 
-With individual profiles, desktop layout learning supports one or more selected external monitors and waits for all configured monitors with touch or brightness enabled. The entire saved desktop must be connected before automatic restoration. See [desktop restoration](desktop-restoration.md).
+With individual profiles, desktop layout learning supports one or more selected external monitors alongside a built-in display, and waits for all configured monitors with touch or brightness enabled. The entire saved desktop must be connected before automatic restoration. See [desktop restoration](desktop-restoration.md).
 
 Profile data lives in the existing local `config.json` and is included in installer backups. Keep that file and raw diagnostic output private; see [privacy](../SECURITY.md).
