@@ -168,7 +168,8 @@ final class GestureControllerTests: XCTestCase {
         XCTAssertEqual(
             input.calls,
             [
-                .scroll(deltaX: 2_560, deltaY: 720, phase: .began),
+                // The far endpoint stays inside the display's half-open bounds.
+                .scroll(deltaX: 2_559, deltaY: 719, phase: .began),
                 .scroll(deltaX: 0, deltaY: 0, phase: .ended)
             ]
         )
@@ -462,7 +463,7 @@ final class GestureControllerTests: XCTestCase {
         XCTAssertEqual(
             input.calls,
             [
-                .scroll(deltaX: 2_560, deltaY: 720, phase: .began)
+                .scroll(deltaX: 2_559, deltaY: 719, phase: .began)
             ]
         )
     }
@@ -495,8 +496,8 @@ final class GestureControllerTests: XCTestCase {
         wait(for: [held], timeout: 1)
         XCTAssertEqual(input.calls, [
             .mouseDown(CGPoint(x: 100, y: 200)),
-            .mouseDragged(CGPoint(x: 2_660, y: 920)),
-            .mouseUp(CGPoint(x: 2_660, y: 920))
+            .mouseDragged(CGPoint(x: 2_659, y: 919)),
+            .mouseUp(CGPoint(x: 2_659, y: 919))
         ])
     }
 
