@@ -1,6 +1,6 @@
 # WCH Touch Driver fork: agent reference
 
-Read README.md for current installation, compatibility, verification and limitations. Read THIRD_PARTY_NOTICES.md and preserve LICENSE and upstream Git history.
+Start with README.md. Detailed installation is in docs/setup.md, hardware and verification in docs/compatibility.md, and restoration behavior in docs/desktop-restoration.md. Read CONTRIBUTING.md for development and SECURITY.md for privacy. Read THIRD_PARTY_NOTICES.md and preserve LICENSE and upstream Git history.
 
 This is cryptoteatime's fork of mrnocreativity/xeneon-wch-touchscreen-driver-macos at 707106e828d178db004a7ec1b3d8eee9447b03b9, descended from ajvwhite/MacXeneonEdgeTouchDriver.
 

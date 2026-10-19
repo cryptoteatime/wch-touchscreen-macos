@@ -1,17 +1,19 @@
-# Fork 1.2.0 — 2026-10-19
+# Changelog
+
+## 1.2.0 — 2026-10-19
 
 - Portrait touch mapping, persistent USB connection preferences, visible pointer and optional previous-window focus restoration.
 - Long-press secondary click, double-click dragging, settings and gesture reference UI.
 - Saved external display geometry and ordinary window placement across reconnects.
 - Reopened-window matching across login sessions, a three-minute launch grace period, and local salted metadata fingerprints.
 - App-bundle build/install/recovery scripts, generic portable profile, regression checks and macOS CI.
-- Credits, inherited Git history and original MIT notice retained. Initial public fork release; see README for verified hardware and remaining cold-boot validation.
+- Credits, inherited Git history and original MIT notice retained. Initial public fork release; see [compatibility](docs/compatibility.md) for verified hardware and remaining cold-boot validation.
 
 ---
 
-# Changelog
+## Inherited upstream history
 
-## Unreleased
+### Unreleased at the fork base
 
 - Separates responsiveness pauses from pairing invalidation: independent HID observation and AppKit probes retain verified associations through scheduling delays while blocking stale input. Adds bounded asynchronous file logging, read-only status diagnostics, and interactive LaunchAgent scheduling. Real endpoint changes and sleep/wake still require fresh ambiguous pairing.
 - Restores one central touch-and-release per display. Centralizes storm-safe calibration admission, keeps touch reports out of topology reconciliation, and waits for unresolved controllers to recover without repeatedly reopening prompts.
@@ -26,7 +28,7 @@
 - Runs the accessory application through AppKit's event loop and wakes it during graceful shutdown so WindowServer responsiveness cannot decay while HID input continues separately.
 - Uses the current HID IORegistry instance as reconnect evidence; that identifier alone does not establish continuity of the corresponding video endpoint.
 
-## 1.1.0 - 2026-09-02
+### 1.1.0 - 2026-09-02
 
 - Renames the public project to Xeneon WCH Touchscreen Driver for macOS while preserving the installed executable, LaunchAgent, configuration, logs, and pairing paths for upgrade compatibility.
 - Documents dated compatibility for the CORSAIR XENEON EDGE and the physically verified Prechen HD-123 / Amazon ASIN `B0CTMNPBX3`, and invites community reports for other `wch.cn TouchScreen` USB `27C0:0859` retail names.
@@ -51,7 +53,7 @@
 - Adds an objective pre-install usefulness check based only on macOS, Swift, code verification, and live `27C0:0859` controller presence—not crowdsourced compatibility guesses.
 - Adds a real two-touchscreen desk image, problem-oriented README summary, structured compatibility and bug reports, and GitHub metadata for easier discovery.
 
-## 1.0.0 - 2026-05-03
+### 1.0.0 - 2026-05-03
 
 - Initial release of the single-touch Mac Xeneon Edge Touch Driver.
 - Supports single tap, touch-hold drag, and drag-to-select using cursor borrow and return.

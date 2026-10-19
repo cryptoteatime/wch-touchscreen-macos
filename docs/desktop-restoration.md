@@ -1,0 +1,37 @@
+# Desktop restoration
+
+[Back to README](../README.md) · [Setup](setup.md)
+
+Desktop memory remembers external display rotations, available resolutions and scaling, screen arrangement, and ordinary app window positions and sizes. The built-in display's current resolution and refresh rate are preserved. The right external display follows the built-in screen's right edge if its logical width changes while disconnected.
+
+Enable **Remember monitor layout and app windows** in Touch Settings. The portable profile enables it for new configurations.
+
+## Reconnect
+
+With all saved screens connected, WCH samples the stable desktop about every two seconds. Moving windows or changing the arrangement updates the saved layout automatically. The snapshot is frozen while a saved display is missing.
+
+When every saved screen returns, WCH waits at least three seconds after the latest display change, restores screen geometry, and then moves matching windows. A short visible settling period is expected.
+
+## Restart or log in
+
+Leave macOS **Reopen windows when logging back in** checked. macOS and each application reopen their windows; WCH then restores matching positions. WCH does not launch applications, reopen documents or tabs, or recreate Mission Control Spaces. [Apple explains reopening windows here](https://support.apple.com/en-us/102318).
+
+WCH waits up to three minutes for saved windows to appear. Windows already restored are not repeatedly repositioned while other apps launch. Once the restoration period finishes, it resumes learning the connected desktop.
+
+## How windows are matched
+
+Within one session, WCH prefers the same running window. Across sessions, it uses unique app-provided window identifiers, document fingerprints, or title fingerprints. If an app had exactly one saved window and has exactly one current window, it can match by application alone.
+
+Fingerprints are private salted hashes stored locally. Readable titles, document URLs, and document contents are not saved. See [privacy details](../SECURITY.md#local-data).
+
+## Limits
+
+- Desktop memory currently requires a built-in display and at least two compatible external touchscreens.
+- The complete saved monitor set must be present. Stable display identifiers and a unique hardware fallback accommodate changed DisplayLink IDs; ambiguous or different sets are not guessed.
+- Multiple indistinguishable windows, minimized or full-screen windows, and windows that do not reopen within the waiting period are skipped.
+- Apps may enforce minimum window sizes or refuse Accessibility placement. Desktop Layout Status reports failures. WCH retains the snapshot after placement errors rather than learning the failed arrangement.
+- Only resolutions already available from macOS can be restored. WCH does not create custom display modes.
+- Display rotation uses the optional private macOS function `SLSSetDisplayRotation`, which may change with OS updates. An unavailable or failing function pauses restoration without preventing touch startup.
+- Canceling a logout after macOS has sent its shutdown notification may require restarting WCH to resume layout capture.
+
+Use **Save Current Desktop Layout** to explicitly accept a new arrangement, or **Restore Saved Desktop Layout** to retry restoration. [Compatibility and verification](compatibility.md#verification) distinguishes hardware tests from simulations.
