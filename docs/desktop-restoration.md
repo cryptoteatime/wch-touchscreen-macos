@@ -10,6 +10,8 @@ Enable **Remember monitor layout and app windows** in Touch Settings. The portab
 
 With all saved screens connected, WCH samples the stable desktop about every two seconds. Moving windows or changing the arrangement updates the saved layout automatically. The snapshot is frozen while a saved display is missing.
 
+After driver startup, the saved layout is protected from automatic replacement for sixty seconds; reconnect and wake protect it for at least thirty seconds. If macOS applies a late display arrangement during this period, WCH restores the intended external geometry again. **Save Current Desktop Layout** accepts your chosen arrangement immediately if you want to override this settling period.
+
 When every saved screen returns, WCH waits at least three seconds after the latest display change, restores screen geometry, and then moves matching windows. A short visible settling period is expected.
 
 ## Restart or log in
@@ -17,6 +19,8 @@ When every saved screen returns, WCH waits at least three seconds after the late
 Leave macOS **Reopen windows when logging back in** checked. macOS and each application reopen their windows; WCH then restores matching positions. WCH does not launch applications, reopen documents or tabs, or recreate Mission Control Spaces. [Apple explains reopening windows here](https://support.apple.com/en-us/102318).
 
 WCH waits up to three minutes for saved windows to appear. Windows already restored are not repeatedly repositioned while other apps launch. Once the restoration period finishes, it resumes learning the connected desktop.
+
+Disappearing windows must remain absent for sixty seconds before a smaller snapshot replaces the saved one. This protects against apps closing before the logout notification arrives, and against temporary Accessibility omissions. An empty response never automatically replaces a saved desktop. Intentional window closures are learned after the delay, or immediately through Save Current Desktop Layout.
 
 ## How windows are matched
 
@@ -34,4 +38,4 @@ Fingerprints are private salted hashes stored locally. Readable titles, document
 - Display rotation uses the optional private macOS function `SLSSetDisplayRotation`, which may change with OS updates. An unavailable or failing function pauses restoration without preventing touch startup.
 - Canceling a logout after macOS has sent its shutdown notification may require restarting WCH to resume layout capture.
 
-Use **Save Current Desktop Layout** to explicitly accept a new arrangement, or **Restore Saved Desktop Layout** to retry restoration. [Compatibility and verification](compatibility.md#verification) distinguishes hardware tests from simulations.
+Use **Save Current Desktop Layout** to explicitly accept a new arrangement, or **Restore Saved Desktop Layout** to retry restoration. Desktop Layout Status distinguishes saved and live screen positions and shows whether capture is protected. [Compatibility and verification](compatibility.md#verification) distinguishes hardware tests from simulations.

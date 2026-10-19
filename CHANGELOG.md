@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 — 2026-10-19
+
+- Protects the saved monitor arrangement for the first minute after driver startup and for thirty seconds after monitor reconnect/wake. Late display mode or origin changes during that period trigger restoration instead of being learned as the new layout.
+- Requires missing windows to remain absent for sixty seconds before a smaller snapshot can replace the saved layout. An empty window response never automatically erases an existing layout; Save Current Desktop Layout explicitly accepts the current setup.
+- Freezes capture synchronously during driver termination and adds loaded-window counts, live screen geometry, and capture-protection state to layout diagnostics.
+- Adds regression scenarios for logout window disappearance, temporary Accessibility omissions, late display resets, and explicit saves. Full restart validation of this fix remains pending.
+
 ## 1.2.0 — 2026-10-19
 
 - Portrait touch mapping, persistent USB connection preferences, visible pointer and optional previous-window focus restoration.

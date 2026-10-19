@@ -21,6 +21,15 @@ import Foundation
   let matches = layout.matches(reconnected)!
   check(matches["left"]?.runtimeID == 30,"Reconnect matches changed runtime ID")
   check(matches["right"]?.runtimeID == 99,"Unique hardware fallback matches recreated DisplayLink UUID")
+  check(!layout.needsExternalDisplayRestore(matches:matches),"Restored geometry does not trigger repeated display writes")
+  var defaultOrigin = newLeft; defaultOrigin.frame.origin.y = 400
+  check(layout.needsExternalDisplayRestore(matches:layout.matches([main,defaultOrigin,newRight])!),"A late macOS origin reset is detected")
+  var defaultRotation = newRight; defaultRotation.rotation = 0
+  check(layout.needsExternalDisplayRestore(matches:layout.matches([main,newLeft,defaultRotation])!),"A late rotation reset is detected")
+  var defaultScale = newRight; defaultScale.pixelWidth *= 2
+  check(layout.needsExternalDisplayRestore(matches:layout.matches([main,newLeft,defaultScale])!),"A late scaling reset is detected")
+  var newMainRefresh = main; newMainRefresh.refreshRate = 120
+  check(!layout.needsExternalDisplayRestore(matches:layout.matches([newMainRefresh,newLeft,newRight])!),"The built-in refresh rate stays under user control")
   check(layout.matches([main,left]) == nil,"One late monitor cannot trigger restoration")
   check(layout.matches([main]) == nil,"Undocked topology cannot replace docked profile")
   var imposter = right; imposter.uuid = "other"; imposter.serial = 27

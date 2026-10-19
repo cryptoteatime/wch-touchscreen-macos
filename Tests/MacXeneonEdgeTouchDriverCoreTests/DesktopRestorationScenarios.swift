@@ -67,4 +67,34 @@ func exerciseDesktopRestoration(_ check: (Bool, String) -> Void) throws {
     check(hash.hash("  ", kind: "title") == nil, "Empty metadata is not an identity")
     let attributes = try FileManager.default.attributesOfItem(atPath: directory.appendingPathComponent("window-identity-salt").path)
     check((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600, "Local identity salt is private to the user")
+
+    // A complete saved desk must survive apps closing before the logout notice.
+    var capture = DesktopLayoutCaptureGuard(now: 0)
+    check(!capture.allowsCapture(saved: [a,b], live: [a,b], at: 59), "Login does not immediately overwrite the saved layout")
+    check(capture.allowsCapture(saved: [a,b], live: [a,b], at: 60), "Ordinary learning resumes after login settles")
+    var moved = a; moved.frame.origin.x += 50
+    check(capture.allowsCapture(saved: [a,b], live: [moved,b], at: 61), "Normal window moves are learned without a removal delay")
+    check(!capture.allowsCapture(saved: [a,b], live: [a], at: 62), "The first disappearing window does not shrink the saved snapshot")
+    check(capture.pendingRemovalCount == 1, "Status reports the missing saved window")
+    check(!capture.allowsCapture(saved: [a,b], live: [a], at: 121), "A partial layout remains protected during teardown")
+    check(capture.allowsCapture(saved: [a,b], live: [a], at: 122), "An intentional stable closure is eventually learned")
+    check(capture.allowsCapture(saved: [a,b], live: [a,b], at: 123) && capture.pendingRemovalCount == 0,
+          "A window returning clears the removal candidate")
+    check(!capture.allowsCapture(saved: [a,b], live: [a], at: 124), "A later closure starts a fresh delay")
+    check(!capture.allowsCapture(saved: [a,b], live: [], at: 130), "Closing the remaining app cannot replace the snapshot with an empty desk")
+    check(!capture.allowsCapture(saved: [a,b], live: [], at: 1000), "An empty AX response never automatically erases a saved desk")
+    check(!capture.allowsCapture(saved: [a,b], live: [b], at: 1001), "A changed missing-window set restarts the settling period")
+    check(capture.allowsCapture(saved: [a,b], live: [a,b], at: 1002), "Transient Accessibility omissions recover normally")
+    check(capture.allowsCapture(saved: [a], live: [rebooted], at: 1003), "A uniquely relaunched app is a replacement, not a lost window")
+    capture.beginRecovery(at: 1010)
+    check(capture.isRecovering(at: 1039) && !capture.isRecovering(at: 1040), "Reconnect protects late display changes for thirty seconds")
+    check(!capture.allowsCapture(saved: [a], live: [rebooted], at: 1030), "Late display enumeration cannot be learned as a new arrangement")
+    capture.beginRecovery(at: 1035)
+    check(capture.isRecovering(at: 1064), "A second arriving monitor extends the reconnect protection")
+    capture.acceptExplicitSave(at: 1040)
+    check(!capture.isRecovering(at: 1040) && capture.pendingRemovalCount == 0,
+          "An explicit save immediately accepts the user's chosen arrangement")
+    var fresh = DesktopLayoutCaptureGuard(now: 0)
+    fresh.beginRecovery(at: 5)
+    check(fresh.isRecovering(at: 59), "An early display callback cannot shorten login protection")
 }

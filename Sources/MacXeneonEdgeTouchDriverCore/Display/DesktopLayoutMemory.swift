@@ -93,6 +93,17 @@ struct DesktopLayout: Codable, Equatable {
         return origin
     }
 
+    func needsExternalDisplayRestore(matches: [String: DesktopScreen]) -> Bool {
+        screens.contains { saved in
+            guard !saved.builtIn else { return false }
+            guard let live = matches[saved.uuid] else { return true }
+            return live.frame.origin != targetOrigin(for: saved, matches: matches) ||
+                live.rotation != saved.rotation || live.width != saved.width || live.height != saved.height ||
+                live.pixelWidth != saved.pixelWidth || live.pixelHeight != saved.pixelHeight ||
+                abs(live.refreshRate - saved.refreshRate) >= 1
+        }
+    }
+
     func targetFrame(for window: DesktopWindow, matches: [String: DesktopScreen]) -> CGRect? {
         guard let saved = screens.first(where: { $0.uuid == window.screenUUID }), let live = matches[saved.uuid] else { return nil }
         var result = window.frame.offsetBy(dx: live.frame.minX - saved.frame.minX, dy: live.frame.minY - saved.frame.minY)

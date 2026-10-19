@@ -25,7 +25,7 @@ The original Xeneon configuration remains available through `--profile xeneon`. 
 - Physical unplug/reconnect testing restored both touch mappings and nine open windows to their saved positions and sizes.
 - A live changed-identity simulation replaced saved process/window identities and restored all nine placements, then recaptured the real identities.
 - Release 1.2.0 passed 162 Swift package tests, 87 standalone regression checks, and an app build/signature check. See the [release verification run](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/runs/39203946233) and [current CI](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/workflows/verify.yml).
-- **A complete Mac reboot test remains pending.** Automated scenarios cover changed identities, delayed app startup, and ambiguous windows, but cannot verify every application's macOS Resume behavior.
+- The first physical Mac restart preserved display modes and touch mappings but exposed incomplete window restoration: startup restored a snapshot containing only one window. Version 1.2.1 adds protection against disappearing windows during teardown and late display geometry changes. **A repeat full restart test of that fix remains pending.** Automated scenarios cannot verify every application's macOS Resume behavior.
 
 The controller's current input mode supplies a single contact. Pinch-to-zoom and multi-finger gestures require a working multi-contact protocol and are not available through a settings toggle.
 
