@@ -34,7 +34,8 @@ The original Xeneon configuration remains available through `--profile xeneon`. 
 - Physical-button testing confirmed that DisplayLink reports cached brightness rather than live button changes. The HDMI panel retained its setting on some reconnects but reset to 10% in a later test. Version 1.4.1 explicitly restores WCH's saved DisplayLink level with bounded acknowledgement retries.
 - Brightness regression scenarios cover startup defaults, one-percent button changes, restart persistence, duplicate identities, bounded failures, and MacBook following.
 - Profile regression scenarios cover mixed display models, native-only and mixed connections, independent following preferences, excluded monitors, and configuration migration. Other monitor models and connection combinations still require hardware testing.
-- Physical reconnect testing confirmed native brightness restoration in 1.4.0. Physical verification of the 1.4.1 DisplayLink restore and full reboot brightness testing remain pending. See [brightness behavior and limitations](brightness.md).
+- Physical reconnect testing in 1.4.1 restored both saved brightness levels, both profiles, the portrait layout, and nine windows, with touch working on both panels. The HDMI panel initially reported 10%, then acknowledged the saved 100% setting; the operator confirmed the visible brightness returned without a button press. Native brightness was confirmed by hardware readback. A brief dim interval remains while DisplayLink reconnects and restoration settles.
+- Full reboot brightness testing remains pending. See [brightness behavior and limitations](brightness.md).
 
 The controller's current input mode supplies a single contact. Pinch-to-zoom and multi-finger gestures require a working multi-contact protocol and are not available through a settings toggle.
 
