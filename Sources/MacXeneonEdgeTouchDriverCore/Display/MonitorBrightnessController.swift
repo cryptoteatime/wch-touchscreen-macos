@@ -147,6 +147,10 @@ final class MonitorBrightnessController {
             policy.remember(samples.filter { policy.target(for: $0.identity) == nil })
             apply(policy.step(samples, builtIn: sourceLevel, now: now, following: followingIdentities()), now: now)
             save()
+        } else {
+            // A detected HDMI endpoint need not wait for the next two-second
+            // native poll. The transport validates its live identity on each write.
+            apply(policy.stepDisplayLink(samples, now: now), now: now)
         }
         checkAcknowledgements()
     }

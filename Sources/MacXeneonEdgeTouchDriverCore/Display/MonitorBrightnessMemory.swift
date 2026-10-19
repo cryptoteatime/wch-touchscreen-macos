@@ -116,21 +116,12 @@ struct MonitorBrightnessPolicy {
             }
             sourceBaseline = source
         }
-        for sample in samples {
+        for sample in samples where sample.identity.transport == .native {
             guard let desired = target(for: sample.identity) else { continue }
             var state = connections[sample.identity] ?? Connection(token: sample.connection, began: now, nextAttempt: now + 3)
             if state.token != sample.connection { state = Connection(token: sample.connection, began: now, nextAttempt: now + 3) }
             defer { connections[sample.identity] = state }
             guard !state.failed else { continue }
-            if sample.identity.transport == .displayLink {
-                // Restore once per connection even if the cache already matches.
-                // Once acknowledged, leave physical-button adjustments alone.
-                guard !state.ready, now >= state.nextAttempt else { continue }
-                guard state.attempts < 4 else { state.failed = true; continue }
-                state.attempts += 1; state.requestedAt = now; state.nextAttempt = now + 6
-                writes.append(MonitorBrightnessWrite(identity: sample.identity, level: desired))
-                continue
-            }
             if !state.ready {
                 guard now >= state.nextAttempt else { continue }
                 state.nextAttempt = now + 3
@@ -148,6 +139,29 @@ struct MonitorBrightnessPolicy {
             if let candidate = state.candidate, abs(candidate - actual) < 0.005, now - state.candidateAt >= 1 {
                 save(sample.identity, actual); state.candidate = nil
             } else { state.candidate = actual; state.candidateAt = now }
+        }
+        return writes + stepDisplayLink(samples, now: now)
+    }
+
+    /// Advance vendor writes on the fast timer without reusing native hardware
+    /// samples as fresh readings or changing the native restoration cadence.
+    mutating func stepDisplayLink(_ samples: [MonitorBrightnessSample], now: TimeInterval) -> [MonitorBrightnessWrite] {
+        guard preferences.enabled else { return [] }
+        let samples = unique(samples).filter { $0.identity.transport == .displayLink }
+        let online = Set(samples.map(\.identity))
+        connections = connections.filter { $0.key.transport != .displayLink || online.contains($0.key) }
+        var writes: [MonitorBrightnessWrite] = []
+        for sample in samples {
+            guard let desired = target(for: sample.identity) else { continue }
+            var state = connections[sample.identity] ?? Connection(token: sample.connection, began: now, nextAttempt: now + 0.5)
+            if state.token != sample.connection { state = Connection(token: sample.connection, began: now, nextAttempt: now + 0.5) }
+            defer { connections[sample.identity] = state }
+            // Restore once per connection even if the cache already matches.
+            // Once acknowledged, leave physical-button adjustments alone.
+            guard !state.failed, !state.ready, now >= state.nextAttempt else { continue }
+            guard state.attempts < 4 else { state.failed = true; continue }
+            state.attempts += 1; state.requestedAt = now; state.nextAttempt = now + 6
+            writes.append(MonitorBrightnessWrite(identity: sample.identity, level: desired))
         }
         return writes
     }

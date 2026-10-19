@@ -63,7 +63,9 @@ func exerciseMonitorBrightness(_ check: (Bool, String) -> Void) throws {
     preferences.followBuiltIn = false
     var independent = MonitorBrightnessPolicy(preferences: preferences)
     _ = independent.step(samples(0.85), builtIn: 1, now: 0)
-    check(independent.step(samples(0.85), builtIn: 0.4, now: 1).isEmpty, "Independent mode ignores Mac brightness changes")
+    check(independent.step(samples(0.85), builtIn: 0.4, now: 1) == [MonitorBrightnessWrite(identity: right, level: 0.85)] &&
+          independent.preferences.targets.allSatisfy { $0.level == 0.85 },
+          "Independent mode restores the saved HDMI level on the early schedule and ignores Mac brightness changes")
     var failed = MonitorBrightnessPolicy(preferences: preferences)
     _ = failed.step(samples(nil), builtIn: 1, now: 0)
     for time in stride(from: 3.0, through: 24, by: 3) { _ = failed.step(samples(nil), builtIn: 1, now: time) }
@@ -109,8 +111,46 @@ func exerciseMonitorBrightness(_ check: (Bool, String) -> Void) throws {
     _ = timedOut.synchronize(0.5, samples: hdmi("B"), now: 65)
     check(!timedOut.acknowledge(right, connection: "B", level: 0.85, requestedAt: 64, success: true), "A new Mac brightness press supersedes an in-flight restore")
     check(timedOut.acknowledge(right, connection: "B", level: 0.5, requestedAt: 65, success: true), "The latest Mac brightness write can complete restoration")
+
+    var fast = MonitorBrightnessPolicy(preferences: preferences)
+    _ = fast.step(samples(0.10, rightLevel: 0.10), builtIn: 1, now: 0)
+    check(fast.stepDisplayLink(samples(0.10), now: 0.49).isEmpty, "The fast HDMI path preserves a short connection settling period")
+    check(fast.stepDisplayLink(samples(0.10), now: 0.5) == [MonitorBrightnessWrite(identity: right, level: 0.85)],
+          "HDMI restoration starts after half a second without a native hardware poll")
+    check(fast.step(samples(0.10), builtIn: 1, now: 0.5).isEmpty, "A regular poll at the same time does not duplicate the fast write")
+    check(fast.target(for: left) == 0.85 && fast.restoring(left), "Fast HDMI work preserves the native target and connection state")
+    check(fast.stepDisplayLink(samples(0.10), now: 1).isEmpty, "The fast timer does not repeatedly write while awaiting acknowledgement")
+    check(fast.acknowledge(right, connection: "first", level: 0.85, requestedAt: 0.5, success: true), "The early HDMI write still requires its own acknowledgement")
+    check(fast.step(samples(0.10), builtIn: 1, now: 2.99).isEmpty, "Native brightness retains its original three-second settling period")
+    check(fast.step(samples(0.10), builtIn: 1, now: 3) == [MonitorBrightnessWrite(identity: left, level: 0.85)],
+          "The native restore proceeds on its original schedule after the fast HDMI restore")
+    for time in [6.0, 9, 12] { _ = fast.step(samples(0.85), builtIn: 1, now: time) }
+    _ = fast.step(samples(0.70), builtIn: 1, now: 15)
+    _ = fast.stepDisplayLink(samples(0.70), now: 16.5)
+    check(fast.target(for: left) == 0.85, "Fast HDMI ticks cannot treat an old native sample as a second stable button reading")
+    _ = fast.step(samples(0.70), builtIn: 1, now: 17)
+    check(fast.target(for: left) == 0.70, "A fresh native poll still remembers a stable hardware adjustment")
+
+    var rapid = MonitorBrightnessPolicy(preferences: preferences)
+    _ = rapid.stepDisplayLink(hdmi("A"), now: 0)
+    check(rapid.stepDisplayLink([], now: 0.25).isEmpty, "A disconnect before the early deadline produces no write")
+    _ = rapid.stepDisplayLink(hdmi("B"), now: 0.3)
+    check(rapid.stepDisplayLink(hdmi("B"), now: 0.79).isEmpty, "A replacement HDMI connection gets its own settling period")
+    check(rapid.stepDisplayLink(hdmi("B"), now: 0.8).count == 1, "A stable replacement connection can restore promptly")
+    check(rapid.acknowledge(right, connection: "B", level: 0.85, requestedAt: 0.8, success: false), "An early vendor error is handled without declaring success")
+    check(rapid.stepDisplayLink(hdmi("B"), now: 6.79).isEmpty, "Early errors retain the existing retry interval")
+    check(rapid.stepDisplayLink(hdmi("B"), now: 6.8).count == 1, "An early failed attempt still gets the normal bounded retry")
+    var fastTimeout = MonitorBrightnessPolicy(preferences: preferences)
+    _ = fastTimeout.stepDisplayLink(hdmi(), now: 0)
+    var fastAttempts = 0
+    for index in 1...200 { fastAttempts += fastTimeout.stepDisplayLink(hdmi(), now: Double(index) / 4).count }
+    check(fastAttempts == 4 && fastTimeout.failed(right), "A fast timer cannot exceed four unacknowledged attempts")
+    var fastAmbiguous = MonitorBrightnessPolicy(preferences: preferences)
+    _ = fastAmbiguous.stepDisplayLink(hdmi() + hdmi(), now: 0)
+    check(fastAmbiguous.stepDisplayLink(hdmi() + hdmi(), now: 1).isEmpty, "The fast path skips duplicate HDMI identities")
     preferences.enabled = false
     var disabled = MonitorBrightnessPolicy(preferences: preferences)
     _ = disabled.step(samples(0.10), builtIn: 1, now: 0)
     check(disabled.step(samples(0.10), builtIn: 0.3, now: 60).isEmpty, "Disabled control never writes")
+    check(disabled.stepDisplayLink(hdmi(), now: 100).isEmpty, "The fast path also respects disabled brightness control")
 }

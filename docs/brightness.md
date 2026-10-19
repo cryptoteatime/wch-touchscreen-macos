@@ -17,6 +17,8 @@ Monitor buttons can override a screen's brightness until the next MacBook bright
 
 DisplayLink restoration uses the last level saved by WCH, even when the reported cache already matches it. WCH makes at most four attempts, then reports a failure while retaining the target. After a successful acknowledgement, it stops writing until another reconnect or a MacBook brightness change. Hardware-button changes on that connection cannot be captured for the next reconnect; the saved WCH level takes precedence then.
 
+The first DisplayLink restore is eligible half a second after WCH detects the selected endpoint, checked on its quarter-second timer. DisplayLink discovery and monitor startup add their own time. Each write still validates the current display identity and requires an acknowledgement; retries remain six seconds apart. Native hardware polling and restoration timing are unchanged.
+
 If the Type-c panel resets to a low startup default, that default does not replace its saved level. A failed restore keeps the saved target and reports the failure. Allow roughly fifteen seconds after reconnecting before adjusting its physical buttons so the initial restoration can finish.
 
 WCH follows the brightness value, including changes made by macOS automatic brightness. Equal percentages do not guarantee equal perceived brightness across different panels. WCH changes hardware brightness; it does not use a dimming overlay, adjust contrast, or change resolutions.
