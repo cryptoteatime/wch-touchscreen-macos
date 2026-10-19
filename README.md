@@ -15,6 +15,7 @@ Use compatible WCH touchscreens on your Mac, including multiple monitors in port
 - Remembers external monitor rotation, resolution, arrangement, and app window positions.
 - Restores matching windows after login, once macOS or the app reopens them.
 - Optionally follows MacBook brightness and remembers supported monitors' brightness.
+- Configures touch and brightness separately for each monitor, including mixed models and connections.
 
 This is a free community project for compatible **wch.cn `27C0:0859`** controllers. Check the [tested hardware and limitations](docs/compatibility.md) first. DisplayLink, when needed, handles video separately. Multi-finger gestures such as pinch-to-zoom are not currently supported.
 
@@ -30,7 +31,7 @@ cd wch-touchscreen-macos
 
 Grant **Accessibility** and **Input Monitoring** to **WCH Touch Driver** in System Settings → Privacy & Security, then follow the touch targets to pair your screens. WCH starts automatically at login. Existing settings are preserved during updates.
 
-Use **WCH → Touch Settings…** in the menu bar to adjust behavior. The [setup guide](docs/setup.md) covers other hardware profiles, permissions, updates, and removal.
+Use **WCH → Monitor Profiles…** to select your monitors and their brightness behavior, and **Touch Settings…** to adjust gestures. The [setup guide](docs/setup.md) covers permissions, updates, and removal.
 
 ## Touch controls
 
@@ -53,7 +54,7 @@ For restarts, leave **Reopen windows when logging back in** checked. WCH restore
 
 ## Monitor brightness
 
-Choose **WCH → Monitor Brightness → Follow MacBook Brightness Changes** to adjust compatible external screens with the MacBook's brightness controls. Everything runs inside WCH. See [brightness setup and hardware limits](docs/brightness.md), including how physical monitor buttons interact with syncing.
+Choose **WCH → Monitor Brightness → Follow MacBook Brightness Changes** to adjust compatible external screens with the MacBook's brightness controls. [Monitor profiles](docs/monitor-profiles.md) let each screen follow the global setting, follow independently, or retain its own level. Automatic connection selection prefers native DDC/CI and uses DisplayLink for screens that need it. See [brightness setup and hardware limits](docs/brightness.md).
 
 ## More information
 

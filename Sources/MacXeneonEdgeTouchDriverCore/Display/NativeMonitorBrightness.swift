@@ -35,8 +35,8 @@ final class NativeMonitorBrightness {
         return Double(value)
     }
 
-    func endpoints(vendor: UInt32?, model: UInt32?) -> [Endpoint] {
-        guard let create, read != nil, write != nil, let vendor, let model else { return [] }
+    func endpoints(vendor: UInt32? = nil, model: UInt32? = nil) -> [Endpoint] {
+        guard let create, read != nil, write != nil else { return [] }
         var frames: [String: [MonitorBrightnessIdentity]] = [:]
         for kind in ["IOMobileFramebufferShim", "AppleCLCD2"] {
             eachService(kind) { frame in
@@ -45,10 +45,12 @@ final class NativeMonitorBrightness {
                       let attrs = self.property(frame, "DisplayAttributes") as? [String: Any],
                       let product = attrs["ProductAttributes"] as? [String: Any],
                       let name = product["ProductName"] as? String,
-                      (product["LegacyManufacturerID"] as? NSNumber)?.uint32Value == vendor,
-                      (product["ProductID"] as? NSNumber)?.uint32Value == model else { return }
+                      let foundVendor = (product["LegacyManufacturerID"] as? NSNumber)?.uint32Value,
+                      let foundModel = (product["ProductID"] as? NSNumber)?.uint32Value,
+                      vendor == nil || foundVendor == vendor,
+                      model == nil || foundModel == model else { return }
                 let identity = MonitorBrightnessIdentity(transport: .native,
-                    key: "native:\(uuid.lowercased()):\(vendor):\(model):\(name)", name: name, vendor: vendor, model: model)
+                    key: "native:\(uuid.lowercased()):\(foundVendor):\(foundModel):\(name)", name: name, vendor: foundVendor, model: foundModel)
                 guard identity.isValid else { return }
                 frames[port, default: []].append(identity)
             }

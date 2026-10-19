@@ -4,7 +4,7 @@
 
 ## Install
 
-Check [compatibility](compatibility.md) before installing. You need Apple's Xcode or Command Line Tools, Python 3, and Git. No third-party Python packages or separate window-manager app are needed.
+Check [compatibility](compatibility.md) before installing. You need Apple's Xcode or Command Line Tools, Python 3, and Git.
 
 ```sh
 git clone https://github.com/cryptoteatime/wch-touchscreen-macos.git
@@ -12,7 +12,7 @@ cd wch-touchscreen-macos
 ./Scripts/install.sh --profile portable-dual-wch
 ```
 
-For the original Corsair Xeneon defaults, use `--profile xeneon`. Profiles initialize a new configuration only; updates preserve existing settings, pairings, and layouts. Other hardware may need different display vendor/model settings. Inspect public hardware identifiers with `swift run DisplayInfo`, and keep unique serial numbers and display IDs private.
+For the original Corsair Xeneon defaults, use `--profile xeneon`. These presets initialize a new configuration only; updates preserve existing settings, pairings, and layouts. Select other models or configure mixed monitors in **WCH → Monitor Profiles…**; see [monitor profiles](monitor-profiles.md).
 
 The installer places **WCH Touch Driver.app** in `~/Applications` for a new install, or updates the existing app at its current location. One per-user LaunchAgent starts it at login. Recovery copies are kept in the application's existing support directory. Installation does not require sudo.
 
@@ -31,6 +31,7 @@ New portable-profile installs enable connection memory. Other configurations can
 | Menu item | Purpose |
 | --- | --- |
 | Touch Settings… | Change gesture timing, sensitivity, and memory options |
+| Monitor Profiles… | Select touch displays, brightness connections, and per-monitor following preferences |
 | Gesture Cheat Sheet… | See the current touch controls |
 | Pair Screens Again… | Replace saved touch mappings using physical targets |
 | Save Current Desktop Layout | Accept the current connected arrangement |

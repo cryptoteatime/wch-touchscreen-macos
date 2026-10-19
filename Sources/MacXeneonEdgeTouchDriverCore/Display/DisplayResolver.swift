@@ -1,3 +1,4 @@
+import ApplicationServices
 import CoreGraphics
 import Foundation
 
@@ -28,6 +29,8 @@ public struct DisplaySnapshot: Equatable {
     public let pixelsHigh: Int
 
     public let rotationDegrees: Int
+    public let uuid: String
+    public let builtIn: Bool
 
     /// Creates a display snapshot for matching or tests.
     public init(
@@ -39,7 +42,9 @@ public struct DisplaySnapshot: Equatable {
         bounds: CGRect,
         pixelsWide: Int,
         pixelsHigh: Int,
-        rotationDegrees: Int = 0
+        rotationDegrees: Int = 0,
+        uuid: String = "",
+        builtIn: Bool = false
     ) {
         self.displayID = displayID
         self.runtimeIdentifier = runtimeIdentifier.isEmpty ? "display-\(displayID)" : runtimeIdentifier
@@ -50,6 +55,8 @@ public struct DisplaySnapshot: Equatable {
         self.pixelsWide = pixelsWide
         self.pixelsHigh = pixelsHigh
         self.rotationDegrees = rotationDegrees
+        self.uuid = uuid
+        self.builtIn = builtIn
     }
 
     /// Public hardware key usable only after the pairing coordinator proves uniqueness.
@@ -71,12 +78,18 @@ public final class DisplayResolver {
     public private(set) var currentMapper: CoordinateMapper?
 
     private let configuration: DriverConfiguration.Display
+    private var profiles: [MonitorProfile]?
     private let activeDisplayProvider: () -> [DisplaySnapshot]
     private var currentDisplayID: CGDirectDisplayID?
 
     /// Creates a display resolver using the effective configuration.
     public convenience init(configuration: DriverConfiguration.Display = DriverConfiguration.defaults.display) {
         self.init(configuration: configuration, activeDisplayProvider: Self.activeDisplaySnapshots)
+    }
+
+    public convenience init(configuration: DriverConfiguration) {
+        self.init(configuration: configuration.display)
+        profiles = configuration.monitors
     }
 
     init(
@@ -126,6 +139,12 @@ public final class DisplayResolver {
 
     /// Returns all compatible displays from supplied snapshots.
     public func matchingDisplays(from displays: [DisplaySnapshot]) -> [DisplaySnapshot] {
+        if let profiles {
+            return displays.filter { display in
+                let matches = profiles.filter { $0.touchEnabled && $0.matches(display) }
+                return matches.count == 1 && displays.filter({ matches[0].matches($0) }).count == 1
+            }.sorted { $0.bounds.minX == $1.bounds.minX ? $0.bounds.minY < $1.bounds.minY : $0.bounds.minX < $1.bounds.minX }
+        }
         let vendorModelMatches = displays.filter { display in
             display.vendorNumber == configuration.vendorNumber &&
             display.modelNumber == configuration.modelNumber
@@ -175,7 +194,8 @@ public final class DisplayResolver {
     }
 
     private static func makeSnapshot(displayID: CGDirectDisplayID) -> DisplaySnapshot {
-        DisplaySnapshot(
+        let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue()
+        return DisplaySnapshot(
             displayID: displayID,
             runtimeIdentifier: "display-\(displayID)",
             vendorNumber: CGDisplayVendorNumber(displayID),
@@ -184,7 +204,9 @@ public final class DisplayResolver {
             bounds: CGDisplayBounds(displayID),
             pixelsWide: CGDisplayPixelsWide(displayID),
             pixelsHigh: CGDisplayPixelsHigh(displayID),
-            rotationDegrees: Int(CGDisplayRotation(displayID).rounded())
+            rotationDegrees: Int(CGDisplayRotation(displayID).rounded()),
+            uuid: uuid.map { CFUUIDCreateString(nil, $0) as String } ?? "",
+            builtIn: CGDisplayIsBuiltin(displayID) != 0
         )
     }
 

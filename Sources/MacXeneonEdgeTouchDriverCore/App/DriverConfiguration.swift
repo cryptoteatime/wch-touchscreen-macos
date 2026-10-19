@@ -17,6 +17,9 @@ public struct DriverConfiguration: Codable, Equatable {
     /// Display matching options.
     public var display: Display
 
+    /// Explicit per-monitor selections. Nil retains legacy model matching.
+    public var monitors: [MonitorProfile]? = nil
+
     /// Gesture feature options.
     public var gesture: Gesture
 
@@ -104,6 +107,10 @@ public struct DriverConfiguration: Codable, Equatable {
         if let value = partial.rememberConnections { configuration.rememberConnections = value }
         if let value = partial.restorePreviousFocus { configuration.restorePreviousFocus = value }
         if let value = partial.rememberDesktopLayout { configuration.rememberDesktopLayout = value }
+        if let monitors = partial.monitors {
+            configuration.monitors = monitors.profiles
+            if !monitors.valid { warnings.append("Monitor profiles are invalid; monitor selection is paused. Open Monitor Profiles to correct them.") }
+        }
 
         if let logLevel = partial.logLevel {
             if DriverLogLevel(configurationName: logLevel) != nil {
@@ -276,6 +283,7 @@ private struct PartialConfiguration: Decodable {
     var logLevel: String?
     var timing: PartialTiming?
     var display: PartialDisplay?
+    var monitors: MonitorProfileList?
     var gesture: PartialGesture?
     var diagnostics: PartialDiagnostics?
 }

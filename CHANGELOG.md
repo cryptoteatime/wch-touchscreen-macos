@@ -1,10 +1,19 @@
 # Changelog
 
+## 1.4.0 — 2026-10-19
+
+- Adds Monitor Profiles to select touch displays, brightness connections, and following preferences per monitor, including mixed display models.
+- Selects a single brightness route for each monitor. Automatic prefers native DDC/CI and activates DisplayLink discovery only when a configured screen needs it and Manager is running.
+- Supports global, per-monitor following, and independent brightness levels while retaining saved targets and legacy configurations.
+- Extends desktop layout learning to one or more individually selected external monitors.
+- Validates explicit identities and skips ambiguous endpoints. Malformed monitor profiles preserve unrelated settings and pause monitor selection.
+- Simplifies user documentation and release notes; adds mixed-monitor routing and persistence regression coverage.
+
 ## 1.3.0 — 2026-10-19
 
 - Adds optional monitor brightness control to the WCH menu, including following MacBook brightness changes and remembering independent native monitor levels.
 - Restores supported native Apple Silicon monitors through DDC/CI with bounded retries and hardware readback. Stable physical-button changes are remembered; startup defaults cannot overwrite saved targets.
-- Controls compatible DisplayLink monitors directly through Manager 17's local notification interface. No Shortcuts or extra helper application is required.
+- Controls compatible DisplayLink monitors through Manager 17's local notification interface.
 - Preserves HDMI hardware-button overrides by leaving DisplayLink brightness alone on reconnect. DisplayLink does not report these changes live; automatic restoration of those overrides is limited to the panel's own memory.
 - Adds local brightness preferences, installer backups, status diagnostics, and regression coverage for sync, reconnect, restart, manual overrides, ambiguous identities, and failed reads. Status refreshes cannot postpone automatic override capture.
 - Starts DisplayLink changes before waiting for native readback, allowing both transports to update together instead of making HDMI wait for native verification.

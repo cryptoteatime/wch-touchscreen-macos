@@ -24,7 +24,7 @@ struct MonitorBrightnessPreferences: Codable, Equatable {
     var targets: [MonitorBrightnessTarget] = []
 
     var isValid: Bool {
-        version == 1 && targets.count <= 8 && Set(targets.map(\.identity)).count == targets.count &&
+        version == 1 && targets.count <= 16 && Set(targets.map(\.identity)).count == targets.count &&
         targets.allSatisfy { $0.identity.isValid && $0.level.isFinite && (0...1).contains($0.level) }
     }
 }
@@ -73,12 +73,16 @@ struct MonitorBrightnessPolicy {
         preferences.enabled = true
     }
 
-    mutating func synchronize(_ level: Double, samples: [MonitorBrightnessSample], now: TimeInterval) -> [MonitorBrightnessWrite] {
+    mutating func synchronize(_ level: Double, samples: [MonitorBrightnessSample], now: TimeInterval,
+                              including identities: Set<MonitorBrightnessIdentity>? = nil) -> [MonitorBrightnessWrite] {
         guard let level = valid(level) else { return [] }
+        let samples = samples.filter { identities == nil || identities!.contains($0.identity) }
         sourceBaseline = level
         remember(samples)
         // An intentional Mac adjustment also updates remembered disconnected screens.
-        for index in preferences.targets.indices { preferences.targets[index].level = level }
+        for index in preferences.targets.indices where identities == nil || identities!.contains(preferences.targets[index].identity) {
+            preferences.targets[index].level = level
+        }
         var writes: [MonitorBrightnessWrite] = []
         for sample in unique(samples) where target(for: sample.identity) != nil {
             var state = connections[sample.identity] ?? Connection(token: sample.connection, began: now, nextAttempt: now + 2)
@@ -94,15 +98,16 @@ struct MonitorBrightnessPolicy {
         return writes
     }
 
-    mutating func step(_ samples: [MonitorBrightnessSample], builtIn: Double?, now: TimeInterval) -> [MonitorBrightnessWrite] {
+    mutating func step(_ samples: [MonitorBrightnessSample], builtIn: Double?, now: TimeInterval,
+                       following identities: Set<MonitorBrightnessIdentity>? = nil) -> [MonitorBrightnessWrite] {
         let samples = unique(samples)
         let online = Set(samples.map(\.identity))
         connections = connections.filter { online.contains($0.key) }
         guard preferences.enabled else { sourceBaseline = valid(builtIn); return [] }
         var writes: [MonitorBrightnessWrite] = []
         if let source = valid(builtIn) {
-            if preferences.followBuiltIn, let baseline = sourceBaseline, abs(source - baseline) >= 0.005 {
-                writes = synchronize(source, samples: samples, now: now)
+            if (identities != nil ? !identities!.isEmpty : preferences.followBuiltIn), let baseline = sourceBaseline, abs(source - baseline) >= 0.005 {
+                writes = synchronize(source, samples: samples, now: now, including: identities)
             }
             sourceBaseline = source
         }
@@ -142,7 +147,7 @@ struct MonitorBrightnessPolicy {
 
     private mutating func save(_ identity: MonitorBrightnessIdentity, _ level: Double) {
         if let index = preferences.targets.firstIndex(where: { $0.identity == identity }) { preferences.targets[index].level = level }
-        else if preferences.targets.count < 8 { preferences.targets.append(MonitorBrightnessTarget(identity: identity, level: level)) }
+        else if preferences.targets.count < 16 { preferences.targets.append(MonitorBrightnessTarget(identity: identity, level: level)) }
     }
     private func valid(_ value: Double?) -> Double? { guard let value, value.isFinite, (0...1).contains(value) else { return nil }; return value }
     private func unique(_ samples: [MonitorBrightnessSample]) -> [MonitorBrightnessSample] {

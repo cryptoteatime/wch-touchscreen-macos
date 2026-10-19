@@ -1,9 +1,9 @@
+import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
 
 /// DisplayLink Manager 17's local PublicApiHandler notification interface.
-/// No client impersonation, XPC connection, extra app, or Shortcut is used.
 /// This vendor interface is optional and may change in future Manager releases.
 final class DisplayLinkMonitorBrightness {
     struct Endpoint {
@@ -19,20 +19,33 @@ final class DisplayLinkMonitorBrightness {
     private var list: [Endpoint] = []
     private var receivedAt: TimeInterval = 0
     private var results: [String: (Double, Int, TimeInterval)] = [:]
-    private let vendor: UInt32?
-    private let model: UInt32?
+    private var active = false
 
-    init(vendor: UInt32?, model: UInt32?) { self.vendor = vendor; self.model = model }
-    func start() {
+    static var managerRunning: Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: "com.displaylink.DisplayLinkUserAgent").isEmpty
+    }
+    /// Called on the controller queue, only when a configured screen needs it.
+    func setActive(_ needed: Bool) {
+        let enabled = needed && Self.managerRunning
+        lock.lock(); let changed = active != enabled; active = enabled; lock.unlock()
+        guard changed else { return }
+        if !enabled { stop(); return }
         tokens.append(center.addObserver(forName: Notification.Name("com.displaylink.DisplayListUpdated"), object: nil, queue: .main) { [weak self] in self?.receiveList($0) })
         tokens.append(center.addObserver(forName: Notification.Name("com.displaylink.BrightnessUpdated"), object: nil, queue: .main) { [weak self] in self?.receiveBrightness($0) })
         refresh()
     }
-    func stop() { tokens.forEach(center.removeObserver); tokens.removeAll() }
-    func refresh() { center.postNotificationName(Notification.Name("com.displaylink.GetDisplays"), object: nil, userInfo: nil, deliverImmediately: true) }
+    func stop() {
+        tokens.forEach(center.removeObserver); tokens.removeAll()
+        lock.lock(); active = false; list.removeAll(); results.removeAll(); receivedAt = 0; lock.unlock()
+    }
+    func refresh() {
+        lock.lock(); let enabled = active; lock.unlock()
+        guard enabled, Self.managerRunning else { return }
+        center.postNotificationName(Notification.Name("com.displaylink.GetDisplays"), object: nil, userInfo: nil, deliverImmediately: true)
+    }
     func endpoints() -> [Endpoint] {
         lock.lock(); defer { lock.unlock() }
-        guard ProcessInfo.processInfo.systemUptime - receivedAt < 8 else { return [] }
+        guard active, Self.managerRunning, ProcessInfo.processInfo.systemUptime - receivedAt < 8 else { return [] }
         return list.filter { item in
             guard let id = UInt32(item.connection) else { return false }
             return CGDisplayIsOnline(id) != 0 && CGDisplayIsBuiltin(id) == 0
@@ -60,7 +73,6 @@ final class DisplayLinkMonitorBrightness {
                   !persistent.isEmpty, persistent.count <= 512, item["isEnabled"] as? Bool == true else { return nil }
             let id = idNumber.uint32Value
             guard CGDisplayIsOnline(id) != 0, CGDisplayIsBuiltin(id) == 0,
-                  CGDisplayVendorNumber(id) == vendor, CGDisplayModelNumber(id) == model,
                   let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return nil }
             let identity = MonitorBrightnessIdentity(transport: .displayLink, key: "displaylink:" + (CFUUIDCreateString(nil, uuid) as String),
                 name: name, vendor: CGDisplayVendorNumber(id), model: CGDisplayModelNumber(id))
@@ -69,6 +81,7 @@ final class DisplayLinkMonitorBrightness {
         }
         let groups = Dictionary(grouping: entries, by: \.identity)
         lock.lock()
+        guard active else { lock.unlock(); return }
         list = entries.filter { groups[$0.identity]?.count == 1 }
         receivedAt = ProcessInfo.processInfo.systemUptime
         lock.unlock()

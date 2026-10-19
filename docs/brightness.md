@@ -4,7 +4,7 @@
 
 Brightness control is optional and starts off. Open **WCH → Monitor Brightness → Follow MacBook Brightness Changes** to enable it. Enabling immediately matches connected compatible monitors to the MacBook's current brightness; later MacBook brightness changes update them again. The menu setting survives WCH restarts and login.
 
-The integration is included in WCH. No Shortcuts, scripts, helper applications, or extra startup items need to be configured. DisplayLink Manager must already be running for a DisplayLink screen's video and brightness control.
+Use **WCH → Monitor Profiles…** to select a connection and following preference for each screen. Automatic selection prefers a uniquely identified native route, and activates the DisplayLink integration only when a selected screen needs it and DisplayLink Manager is running. See [monitor profiles](monitor-profiles.md).
 
 ## Physical buttons and reconnecting
 
@@ -25,9 +25,9 @@ WCH follows the brightness value, including changes made by macOS automatic brig
 
 | Control | Behavior |
 | --- | --- |
-| Follow MacBook Brightness Changes | Enable syncing; uncheck to keep independent remembered levels |
+| Follow MacBook Brightness Changes | Enable syncing for profiles using the global setting; per-monitor overrides remain in effect |
 | Match MacBook Brightness Now | Send the current MacBook level once and remember it |
-| Remember Current Brightness | Enable independent memory, capture readable hardware levels, and stop following the MacBook |
+| Remember Current Brightness | Capture readable hardware levels and turn off global following; explicit per-monitor follow preferences remain in effect |
 | Brightness Status… | Show remembered targets and the last write result |
 | Turn Off Brightness Control | Stop automatic reads and writes; keep saved preferences |
 
@@ -35,7 +35,7 @@ DisplayLink values in status are last-known values, not live readings of physica
 
 ## Compatibility and implementation
 
-The native transport currently targets Apple Silicon DDC/CI through optional `IOAVService` symbols. DisplayLink support uses Manager 17's local distributed-notification interface. Neither interface is a stable public macOS API; changes in macOS or DisplayLink Manager may require an update. Missing or ambiguous identities are skipped instead of choosing a monitor by list order. Screens must match the display vendor/model in the existing WCH hardware profile.
+The native transport currently targets Apple Silicon DDC/CI through optional `IOAVService` symbols. DisplayLink support uses Manager 17's local distributed-notification interface. Neither interface is a stable public macOS API; changes in macOS or DisplayLink Manager may require an update. Missing or ambiguous identities are skipped. Individual monitor profiles support different display models; legacy configurations continue to use their display vendor/model filter.
 
 The MacBook is read through `DisplayServicesGetBrightness`; WCH never writes its brightness. External hardware I/O runs on a separate utility queue so it does not block touch processing. DisplayLink writes are checked for an acknowledgement; that acknowledgement is not an independent optical measurement or a live read of the monitor buttons. Native writes are checked by hardware readback.
 

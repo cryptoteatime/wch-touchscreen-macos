@@ -20,6 +20,7 @@ final class DesktopLayoutController {
     private let enabled: Bool
     private let vendor: UInt32?
     private let model: UInt32?
+    private let profiles: [MonitorProfile]?
     private let url: URL
     private var layout: DesktopLayout?
     private var policy: DesktopLayoutPolicy
@@ -37,6 +38,7 @@ final class DesktopLayoutController {
         enabled = configuration.rememberDesktopLayout
         vendor = configuration.display.vendorNumber
         model = configuration.display.modelNumber
+        profiles = configuration.monitors
         self.url = url
         if FileManager.default.fileExists(atPath: url.path) {
             do {
@@ -156,7 +158,13 @@ final class DesktopLayoutController {
     }
 
     private func canLearn(_ screens: [DesktopScreen]) -> Bool {
-        screens.contains(where: \.builtIn) && screens.filter { !$0.builtIn && $0.vendor == vendor && $0.model == model }.count >= 2 &&
+        if let profiles {
+            let selected = profiles.filter { $0.touchEnabled || $0.brightnessConnection != .off }
+            return !selected.isEmpty && selected.allSatisfy { profile in
+                screens.filter { profile.matches(uuid: $0.uuid, vendor: $0.vendor, model: $0.model, serial: $0.serial, builtIn: $0.builtIn) }.count == 1
+            } && screens.allSatisfy { CGDisplayMirrorsDisplay($0.runtimeID) == kCGNullDirectDisplay }
+        }
+        return screens.contains(where: \.builtIn) && screens.filter { !$0.builtIn && $0.vendor == vendor && $0.model == model }.count >= 2 &&
         screens.allSatisfy { CGDisplayMirrorsDisplay($0.runtimeID) == kCGNullDirectDisplay }
     }
 
@@ -171,7 +179,7 @@ final class DesktopLayoutController {
         switch action {
         case .wait:
             if policy.failed { return }
-            status = layout == nil ? "Waiting for both touchscreens before saving" : "Saved layout retained; waiting for the same monitors"
+            status = layout == nil ? "Waiting for configured monitors before saving" : "Saved layout retained; waiting for the same monitors"
         case .capture:
             // DisplayLink/macOS can report a later mode/origin change after the
             // first successful restore. Keep the intended geometry during recovery.

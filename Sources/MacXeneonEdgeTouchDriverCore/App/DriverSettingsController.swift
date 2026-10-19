@@ -14,6 +14,7 @@ final class DriverSettingsController: NSObject, NSMenuDelegate {
     private let restoreFocus = NSButton(checkboxWithTitle: "Return focus to the previously active window", target: nil, action: nil)
     private let desktop = NSButton(checkboxWithTitle: "Remember monitor layout and app windows", target: nil, action: nil)
     private var followBrightnessItem: NSMenuItem?
+    private let monitorProfiles = MonitorProfilesController()
 
     override init() {
         super.init()
@@ -24,6 +25,8 @@ final class DriverSettingsController: NSObject, NSMenuDelegate {
         let settings = NSMenuItem(title: "Touch Settings…", action: #selector(showSettings), keyEquivalent: "")
         settings.target = self
         menu.addItem(settings)
+        let profiles = NSMenuItem(title: "Monitor Profiles…", action: #selector(showMonitorProfiles), keyEquivalent: "")
+        profiles.target = self; menu.addItem(profiles)
         let help = NSMenuItem(title: "Gesture Cheat Sheet…", action: #selector(showCheatSheet), keyEquivalent: "")
         help.target = self
         menu.addItem(help)
@@ -63,6 +66,8 @@ final class DriverSettingsController: NSObject, NSMenuDelegate {
         followBrightnessItem?.state = value?.enabled == true && value?.followBuiltIn == true ? .on : .off
     }
 
+    @objc func showMonitorProfiles() { monitorProfiles.show() }
+
     @objc private func toggleBrightnessFollow() {
         brightnessCommand(followBrightnessItem?.state == .on ? "brightness-independent" : "follow-brightness", show: true)
     }
@@ -83,10 +88,12 @@ final class DriverSettingsController: NSObject, NSMenuDelegate {
                     let detail = monitor["connected"] as? Bool == false ? "Disconnected" :
                         monitor["restoreFailed"] as? Bool == true ? "Restore failed; saved level retained" :
                         monitor["restoring"] as? Bool == true ? "Restoring saved level…" : monitor["lastWrite"] as? String ?? ""
-                    return "\(monitor["name"] ?? "Monitor"): \(monitor["rememberedPercent"] ?? 0)% \(suffix)\n\(detail)"
+                    let behavior = monitor["followsMacBook"] as? Bool == true ? "following MacBook" : "independent"
+                    return "\(monitor["name"] ?? "Monitor"): \(monitor["rememberedPercent"] ?? 0)% \(suffix), \(behavior)\n\(detail)"
                 }.joined(separator: "\n")
                 message = (value["error"] as? String ?? value["status"] as? String ?? reply) + "\n\n" + lines +
-                    "\n\nWhen following is on, MacBook brightness changes update compatible monitors. Physical-button adjustments last until the next MacBook change. Supported native monitors remember those adjustments. DisplayLink cannot report button changes live, so those panels use their own memory on reconnect. Equal percentages may look different across panels."
+                    "\n\nMonitor Profiles controls which screens follow MacBook changes and which keep independent levels. Native monitors remember readable button adjustments. Equal percentages may look different across panels." +
+                    ((value["displayLinkNote"] as? String).map { "\n\n" + $0 } ?? "")
             } catch { message = error.localizedDescription }
             DispatchQueue.main.async {
                 guard self != nil, show else { return }

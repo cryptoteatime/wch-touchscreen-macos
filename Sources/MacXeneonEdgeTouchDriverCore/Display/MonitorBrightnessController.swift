@@ -5,9 +5,11 @@ import Foundation
 final class MonitorBrightnessController {
     private let queue = DispatchQueue(label: "wch.monitor-brightness", qos: .utility)
     private let native = NativeMonitorBrightness()
-    private let displayLink: DisplayLinkMonitorBrightness
+    private let displayLink = DisplayLinkMonitorBrightness()
     private let vendor: UInt32?
     private let model: UInt32?
+    private let profiles: [MonitorProfile]?
+    private var routes: [MonitorBrightnessIdentity: MonitorProfile] = [:]
     private let url: URL
     private var policy: MonitorBrightnessPolicy
     private var persisted: MonitorBrightnessPreferences
@@ -29,7 +31,7 @@ final class MonitorBrightnessController {
 
     init(configuration: DriverConfiguration, url: URL = defaultURL()) {
         vendor = configuration.display.vendorNumber; model = configuration.display.modelNumber
-        displayLink = DisplayLinkMonitorBrightness(vendor: vendor, model: model)
+        profiles = configuration.monitors
         self.url = url
         var value = MonitorBrightnessPreferences()
         if FileManager.default.fileExists(atPath: url.path) {
@@ -50,7 +52,6 @@ final class MonitorBrightnessController {
 
     func start() {
         displayLink.onUpdate = { [weak self] in self?.queue.async { [weak self] in self?.checkAcknowledgements() } }
-        displayLink.start()
         let center = NSWorkspace.shared.notificationCenter
         observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.sleep(true) })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.sleep(false) })
@@ -63,9 +64,8 @@ final class MonitorBrightnessController {
         }
     }
     func stop() {
-        displayLink.stop()
         observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }; observers.removeAll()
-        queue.async { [weak self] in self?.stopped = true; self?.timer?.cancel(); self?.timer = nil }
+        queue.async { [weak self] in self?.stopped = true; self?.timer?.cancel(); self?.timer = nil; self?.displayLink.stop() }
     }
     private func sleep(_ value: Bool) {
         queue.async { [weak self] in
@@ -95,16 +95,16 @@ final class MonitorBrightnessController {
                     if command == "follow-brightness" {
                         if let source = self.native.builtInLevel() {
                             self.sourceLevel = source
-                            self.apply(self.policy.synchronize(source, samples: self.samples, now: now), now: now)
+                            self.apply(self.policy.synchronize(source, samples: self.samples, now: now, including: self.followingIdentities()), now: now)
                         } else { error = "The built-in brightness is unavailable; saved monitor levels are retained." }
                     }
                 }
             case "brightness-independent": self.policy.preferences.followBuiltIn = false
-            case "brightness-off": self.policy.preferences.enabled = false
+            case "brightness-off": self.policy.preferences.enabled = false; self.displayLink.stop()
             case "sync-brightness":
                 if let source = self.native.builtInLevel() {
                     self.loadError = nil; self.sourceLevel = source
-                    self.apply(self.policy.synchronize(source, samples: self.samples, now: now), now: now)
+                    self.apply(self.policy.synchronize(source, samples: self.samples, now: now, including: self.eligibleIdentities()), now: now)
                 } else { error = "The built-in brightness is unavailable." }
             case "restore-brightness": self.policy.resetConnections(); self.lastPoll = -10
             default: break
@@ -139,18 +139,53 @@ final class MonitorBrightnessController {
         // policy cadence, or frequent diagnostics could starve override memory.
         if polled { poll(now); lastPoll = now }
         if polled || sourceSettled {
-            apply(policy.step(samples, builtIn: sourceLevel, now: now), now: now)
+            // Learn a newly enabled monitor once, without replacing saved targets
+            // with a power-on default from other monitors in the same poll.
+            policy.remember(samples.filter { policy.target(for: $0.identity) == nil })
+            apply(policy.step(samples, builtIn: sourceLevel, now: now, following: followingIdentities()), now: now)
             save()
         }
         checkAcknowledgements()
     }
 
     private func poll(_ now: TimeInterval) {
+        let displays = DisplayResolver.activeDisplaySnapshots().filter { !$0.builtIn }
+        let direct = native.endpoints(vendor: profiles == nil ? vendor : nil, model: profiles == nil ? model : nil)
+        let needed: Bool
+        if let profiles {
+            needed = MonitorProfileRouting.needsDisplayLink(profiles, displays: displays, native: direct.map(\.identity))
+        } else {
+            needed = displays.filter { $0.vendorNumber == vendor && $0.modelNumber == model }.count > direct.count
+        }
+        displayLink.setActive(needed)
         displayLink.refresh()
-        nativeEndpoints = native.endpoints(vendor: vendor, model: model)
-        displayLinkEndpoints = displayLink.endpoints()
+        let linked = displayLink.endpoints()
+        if let profiles {
+            routes = MonitorProfileRouting.selected(profiles, displays: displays, native: direct.map(\.identity), displayLink: linked.map(\.identity))
+            nativeEndpoints = direct.filter { routes[$0.identity] != nil }
+            displayLinkEndpoints = linked.filter { routes[$0.identity] != nil }
+        } else {
+            nativeEndpoints = direct
+            displayLinkEndpoints = linked.filter { $0.identity.vendor == vendor && $0.identity.model == model }
+        }
         samples = nativeEndpoints.map { MonitorBrightnessSample(identity: $0.identity, connection: $0.connection, level: native.level($0)) } +
             displayLinkEndpoints.map { MonitorBrightnessSample(identity: $0.identity, connection: $0.connection, level: $0.reportedLevel) }
+    }
+
+    private func profile(for identity: MonitorBrightnessIdentity) -> MonitorProfile? {
+        let matches = profiles?.filter { $0.accepts(identity) } ?? []
+        return matches.count == 1 ? matches[0] : nil
+    }
+    private func eligibleIdentities() -> Set<MonitorBrightnessIdentity> {
+        let known = policy.preferences.targets.map(\.identity) + samples.map(\.identity)
+        return Set(known.filter { identity in
+            profiles == nil ? identity.vendor == vendor && identity.model == model : profile(for: identity) != nil
+        })
+    }
+    private func followingIdentities() -> Set<MonitorBrightnessIdentity> {
+        Set(eligibleIdentities().filter { identity in
+            profile(for: identity)?.follows(global: policy.preferences.followBuiltIn) ?? policy.preferences.followBuiltIn
+        })
     }
 
     private func apply(_ writes: [MonitorBrightnessWrite], now: TimeInterval) {
@@ -196,9 +231,11 @@ final class MonitorBrightnessController {
         } catch { loadError = "Could not save monitor brightness: \(error.localizedDescription)" }
     }
     private func status() -> [String: Any] {
-        let monitors: [[String: Any]] = policy.preferences.targets.map { target in
+        let eligible = eligibleIdentities()
+        let monitors: [[String: Any]] = policy.preferences.targets.filter { eligible.contains($0.identity) }.map { target in
             let live = samples.first { $0.identity == target.identity }
-            var item: [String: Any] = ["name": target.identity.name, "transport": target.identity.transport.rawValue,
+            var item: [String: Any] = ["name": profile(for: target.identity)?.name ?? target.identity.name, "transport": target.identity.transport.rawValue,
+                "followsMacBook": followingIdentities().contains(target.identity),
                 "rememberedPercent": Int((target.level * 100).rounded()), "connected": live != nil,
                 "restoring": policy.restoring(target.identity), "restoreFailed": policy.failed(target.identity),
                 "lastWrite": writeStatus[target.identity] ?? "No write this session",
@@ -208,9 +245,20 @@ final class MonitorBrightnessController {
         }
         var result: [String: Any] = ["enabled": policy.preferences.enabled, "followBuiltIn": policy.preferences.followBuiltIn,
             "monitors": monitors,
-            "status": loadError ?? (policy.preferences.enabled ? (policy.preferences.followBuiltIn ? "Following MacBook brightness changes" : "Remembering independent monitor brightness") : "Brightness control is off"),
-            "displayLinkNote": "DisplayLink's reported level is cached. HDMI button overrides are not read live; reconnect keeps the monitor's own setting."]
+            "status": loadError ?? (policy.preferences.enabled ? (followingIdentities().isEmpty ? "Remembering independent monitor brightness" : "Following MacBook brightness changes on selected monitors") : "Brightness control is off")]
+        if !displayLinkEndpoints.isEmpty {
+            result["displayLinkNote"] = "DisplayLink's reported level is cached. Button overrides are not read live; reconnect keeps the monitor's own setting."
+        }
         if let level = native.builtInLevel() { result["builtInPercent"] = Int((level * 100).rounded()) }
+        if let profiles {
+            let displays = DisplayResolver.activeDisplaySnapshots()
+            result["profiles"] = profiles.map { profile -> [String: Any] in
+                ["name": profile.name, "connected": displays.contains { profile.matches($0) },
+                 "touchEnabled": profile.touchEnabled, "brightnessConnection": profile.brightnessConnection.rawValue,
+                 "brightnessBehavior": profile.brightnessBehavior.rawValue,
+                 "activeTransport": routes.first { $0.value == profile }?.key.transport.rawValue ?? "unavailable"]
+            }
+        }
         if let loadError { result["error"] = loadError }
         return result
     }

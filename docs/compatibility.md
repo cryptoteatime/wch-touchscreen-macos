@@ -13,7 +13,7 @@ The project targets macOS 13 or later and compatible **wch.cn TouchScreen USB `2
 | Touch controllers | Two WCH `27C0:0859` controllers |
 | Display descriptors | Type-c and HDMI; EDID vendor/model `4A8B:2200` |
 | External layout | 1050 × 1680, rotated 90° and 270° |
-| Driver | Fork version 1.3.0 |
+| Driver | Fork versions 1.2–1.4 |
 | Brightness | Native Apple Silicon DDC/CI; DisplayLink Manager 17.0.24 |
 
 The marketed monitor model has not been independently verified. These shared product identifiers are more reliable than assuming an Amazon listing variant. Other panels, Intel Macs, and other macOS versions need hardware testing.
@@ -24,16 +24,17 @@ The original Xeneon configuration remains available through `--profile xeneon`. 
 
 - Physical tests confirmed portrait touch mapping, pointer placement, normal clicking, long-press right-click, and dragging on both panels.
 - Physical unplug/reconnect testing restored both touch mappings and nine open windows to their saved positions and sizes.
-- A live changed-identity simulation replaced saved process/window identities and restored all nine placements, then recaptured the real identities.
-- Release 1.2.0 passed 162 Swift package tests, 87 standalone regression checks, and an app build/signature check. See the [release verification run](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/runs/39203946233) and [current CI](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/workflows/verify.yml).
-- The first physical Mac restart preserved display modes and touch mappings but exposed incomplete window restoration: startup restored a snapshot containing only one window. Version 1.2.1 adds protection against disappearing windows during teardown and late display geometry changes. **A repeat full restart test of that fix remains pending.** Automated scenarios cannot verify every application's macOS Resume behavior.
+- Simulated process/window identity changes restored saved placements. Automated scenarios cover delayed app startup, logout closures, transient missing windows, and late display geometry changes.
+- Full restart validation of the layout protection introduced in 1.2.1 remains pending. Automated checks cannot verify every application's macOS Resume behavior.
+- [macOS CI](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/workflows/verify.yml) runs the Swift package tests, standalone regression scenarios, and app build/signature verification.
 
-### Brightness in 1.3.0
+### Brightness and monitor profiles
 
-- The installed WCH app sent brightness to both panels directly. Native hardware readback confirmed the target and DisplayLink acknowledged its write; no Shortcut was involved. Both touch controllers stayed active and all nine saved windows restored after the app update.
-- A physical-button test set the HDMI panel to 70%, while a fresh DisplayLink query still reported 85%. WCH therefore does not automatically restore that cached level over HDMI button overrides. The user previously confirmed that this HDMI panel retained its own setting across reconnect.
-- The brightness policy passed 29 standalone checks, including native startup defaults, one-percent button changes, restart persistence, duplicate identities, bounded failures, and MacBook sync. Together with the existing suite, 140 standalone checks passed locally, along with an app build and signature verification.
-- The user confirmed that MacBook brightness keys changed both screens. A separate slider test from 100% to 75% and back also updated both panels: native hardware readback matched and DisplayLink acknowledged both changes. A real reconnect/reboot of the new brightness feature remains pending; readback and simulation do not verify every power-cycle behavior. See [brightness behavior and limitations](brightness.md).
+- MacBook brightness controls changed both panels. Native writes were verified with hardware readback; DisplayLink writes received acknowledgements.
+- Physical-button testing confirmed that DisplayLink reports cached brightness rather than live button changes. The tested HDMI panel retained its own setting across reconnect; this behavior is monitor-specific.
+- Brightness regression scenarios cover startup defaults, one-percent button changes, restart persistence, duplicate identities, bounded failures, and MacBook following.
+- Profile regression scenarios cover mixed display models, native-only and mixed connections, independent following preferences, excluded monitors, and configuration migration. Other monitor models and connection combinations still require hardware testing.
+- A physical reconnect/reboot of automatic brightness memory remains pending. See [brightness behavior and limitations](brightness.md).
 
 The controller's current input mode supplies a single contact. Pinch-to-zoom and multi-finger gestures require a working multi-contact protocol and are not available through a settings toggle.
 

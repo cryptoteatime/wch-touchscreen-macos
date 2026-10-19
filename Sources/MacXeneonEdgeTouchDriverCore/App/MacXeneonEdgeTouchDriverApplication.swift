@@ -74,7 +74,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
     public convenience init(configuration: DriverConfiguration = .defaults) {
         self.init(
             configuration: configuration,
-            displayResolver: DisplayResolver(configuration: configuration.display),
+            displayResolver: DisplayResolver(configuration: configuration),
             inputSink: CGEventInputSink(),
             cursorController: CGCursorController(restoreOriginalPosition: false, hidesCursorWhileTouching: false),
             focusRestorerProvider: {
@@ -156,6 +156,10 @@ public final class MacXeneonEdgeTouchDriverApplication {
         do {
             try control.start { [weak self] command, reply in
                 guard let self else { reply("{\"error\":\"Driver stopped\"}"); return }
+                if command == "show-monitor-profiles" {
+                    DispatchQueue.main.async { self.settingsController?.showMonitorProfiles(); reply("{\"status\":\"Monitor Profiles opened\"}") }
+                    return
+                }
                 if ["layout-status", "save-layout", "restore-layout"].contains(command), let layout = self.desktopLayoutController {
                     layout.request(command, reply: reply)
                     return
