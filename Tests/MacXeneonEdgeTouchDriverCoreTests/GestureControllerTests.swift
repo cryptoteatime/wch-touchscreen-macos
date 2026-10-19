@@ -403,25 +403,31 @@ final class GestureControllerTests: XCTestCase {
             schedulingQueue: queue
         )
         let cleanupSettled = expectation(description: "fast double-click cleanup settled")
-
-        controller.handle(event(.down, rawX: 0, rawY: 0, timestampNanoseconds: 1_000_000_000))
-        controller.handle(event(.up, rawX: 0, rawY: 0, timestampNanoseconds: 1_010_000_000))
-        controller.handle(event(.down, rawX: 0, rawY: 0, timestampNanoseconds: 1_020_000_000))
-        controller.handle(event(.up, rawX: 0, rawY: 0, timestampNanoseconds: 1_040_000_000))
-        queue.asyncAfter(deadline: .now() + .milliseconds(150)) {
-            cleanupSettled.fulfill()
+        focus.onCall = { call in
+            if call == .restoreCapturedWindow { cleanupSettled.fulfill() }
         }
 
-        wait(for: [cleanupSettled], timeout: 1)
-        XCTAssertEqual(input.mouseClickCounts, [1, 1, 2, 2])
-        XCTAssertEqual(cursor.calls, [
-            .borrow(CGPoint(x: 100, y: 200)),
-            .returnToOrigin,
-            .borrow(CGPoint(x: 100, y: 200)),
-            .returnToOrigin
-        ])
-        XCTAssertEqual(focus.calls, [.captureFocusedWindow, .restoreCapturedWindow])
-        XCTAssertEqual(controller.state, .idle)
+        queue.sync {
+            controller.handle(event(.down, rawX: 0, rawY: 0, timestampNanoseconds: 1_000_000_000))
+            controller.handle(event(.up, rawX: 0, rawY: 0, timestampNanoseconds: 1_010_000_000))
+            controller.handle(event(.down, rawX: 0, rawY: 0, timestampNanoseconds: 1_020_000_000))
+            controller.handle(event(.up, rawX: 0, rawY: 0, timestampNanoseconds: 1_040_000_000))
+        }
+
+        // The return timer is scheduled by the mouse-up callback, so a fixed
+        // deadline can precede cleanup on a busy CI runner.
+        wait(for: [cleanupSettled], timeout: 3)
+        queue.sync {
+            XCTAssertEqual(input.mouseClickCounts, [1, 1, 2, 2])
+            XCTAssertEqual(cursor.calls, [
+                .borrow(CGPoint(x: 100, y: 200)),
+                .returnToOrigin,
+                .borrow(CGPoint(x: 100, y: 200)),
+                .returnToOrigin
+            ])
+            XCTAssertEqual(focus.calls, [.captureFocusedWindow, .restoreCapturedWindow])
+            XCTAssertEqual(controller.state, .idle)
+        }
     }
 
     func testForceCancelRestoresFocusedWindow() {

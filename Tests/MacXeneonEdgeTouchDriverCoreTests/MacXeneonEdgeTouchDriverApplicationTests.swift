@@ -1022,7 +1022,12 @@ final class MacXeneonEdgeTouchDriverApplicationTests: XCTestCase {
 
         application.handleDeviceMatched(device)
         application.refreshDisplayMappings(reason: "test initial screen readiness")
-        waitForAsyncWork(milliseconds: 1_100)
+        // Device reconciliation may reset the retry timer. Wait for the actual
+        // third presentation attempt instead of assuming a fixed wall time.
+        let presented = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            overlay.calls.filter { if case .show = $0 { return true }; return false }.count >= 3
+        }, object: nil)
+        wait(for: [presented], timeout: 5)
         XCTAssertEqual(overlay.calls.filter {
             if case .show = $0 { return true }
             return false
