@@ -23,7 +23,7 @@ The original Xeneon configuration remains available through `--profile xeneon`. 
 ## Verification
 
 - Physical tests confirmed portrait touch mapping, pointer placement, normal clicking, long-press right-click, and dragging on both panels.
-- Physical unplug/reconnect testing restored both touch mappings and nine open windows to their saved positions and sizes.
+- Physical unplug/reconnect testing in 1.4.0 retained both monitor profiles, restored the portrait display layout and both touch mappings, and returned nine open windows to their saved positions and sizes.
 - Simulated process/window identity changes restored saved placements. Automated scenarios cover delayed app startup, logout closures, transient missing windows, and late display geometry changes.
 - Full restart validation of the layout protection introduced in 1.2.1 remains pending. Automated checks cannot verify every application's macOS Resume behavior.
 - [macOS CI](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/workflows/verify.yml) runs the Swift package tests, standalone regression scenarios, and app build/signature verification.
@@ -31,10 +31,10 @@ The original Xeneon configuration remains available through `--profile xeneon`. 
 ### Brightness and monitor profiles
 
 - MacBook brightness controls changed both panels. Native writes were verified with hardware readback; DisplayLink writes received acknowledgements.
-- Physical-button testing confirmed that DisplayLink reports cached brightness rather than live button changes. The tested HDMI panel retained its own setting across reconnect; this behavior is monitor-specific.
+- Physical-button testing confirmed that DisplayLink reports cached brightness rather than live button changes. The HDMI panel retained its setting on some reconnects but reset to 10% in a later test. Version 1.4.1 explicitly restores WCH's saved DisplayLink level with bounded acknowledgement retries.
 - Brightness regression scenarios cover startup defaults, one-percent button changes, restart persistence, duplicate identities, bounded failures, and MacBook following.
 - Profile regression scenarios cover mixed display models, native-only and mixed connections, independent following preferences, excluded monitors, and configuration migration. Other monitor models and connection combinations still require hardware testing.
-- A physical reconnect/reboot of automatic brightness memory remains pending. See [brightness behavior and limitations](brightness.md).
+- Physical reconnect testing confirmed native brightness restoration in 1.4.0. Physical verification of the 1.4.1 DisplayLink restore and full reboot brightness testing remain pending. See [brightness behavior and limitations](brightness.md).
 
 The controller's current input mode supplies a single contact. Pinch-to-zoom and multi-finger gestures require a working multi-contact protocol and are not available through a settings toggle.
 

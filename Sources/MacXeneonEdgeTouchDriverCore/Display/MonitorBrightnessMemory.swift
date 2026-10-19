@@ -40,9 +40,9 @@ struct MonitorBrightnessWrite: Equatable {
     var level: Double
 }
 
-/// Pure policy: connection defaults can never become remembered native brightness.
-/// DisplayLink reports cached values, so its physical-button overrides are left to
-/// the monitor's own memory. Only an explicit Mac brightness change writes to it.
+/// Pure policy: connection defaults cannot replace saved brightness targets.
+/// Native restoration uses hardware readback. DisplayLink's cached level cannot
+/// confirm restoration, so a new connection needs a write and acknowledgement.
 struct MonitorBrightnessPolicy {
     private struct Connection {
         var token: String
@@ -54,6 +54,7 @@ struct MonitorBrightnessPolicy {
         var protectUntil: TimeInterval = 0
         var candidate: Double?
         var candidateAt: TimeInterval = 0
+        var requestedAt: TimeInterval?
     }
     var preferences: MonitorBrightnessPreferences
     private var connections: [MonitorBrightnessIdentity: Connection] = [:]
@@ -91,6 +92,10 @@ struct MonitorBrightnessPolicy {
             if sample.identity.transport == .native {
                 state.ready = false; state.failed = false; state.attempts = 0
                 state.began = now - 10; state.nextAttempt = now + 2
+            } else {
+                state.token = sample.connection
+                state.ready = false; state.failed = false; state.attempts = 1
+                state.requestedAt = now; state.nextAttempt = now + 6
             }
             connections[sample.identity] = state
             writes.append(MonitorBrightnessWrite(identity: sample.identity, level: level))
@@ -116,10 +121,16 @@ struct MonitorBrightnessPolicy {
             var state = connections[sample.identity] ?? Connection(token: sample.connection, began: now, nextAttempt: now + 3)
             if state.token != sample.connection { state = Connection(token: sample.connection, began: now, nextAttempt: now + 3) }
             defer { connections[sample.identity] = state }
-            // A hardware-button override on HDMI is invisible while connected.
-            // Reapplying the cache here would undo it; never do that automatically.
-            if sample.identity.transport == .displayLink { state.ready = true; continue }
             guard !state.failed else { continue }
+            if sample.identity.transport == .displayLink {
+                // Restore once per connection even if the cache already matches.
+                // Once acknowledged, leave physical-button adjustments alone.
+                guard !state.ready, now >= state.nextAttempt else { continue }
+                guard state.attempts < 4 else { state.failed = true; continue }
+                state.attempts += 1; state.requestedAt = now; state.nextAttempt = now + 6
+                writes.append(MonitorBrightnessWrite(identity: sample.identity, level: desired))
+                continue
+            }
             if !state.ready {
                 guard now >= state.nextAttempt else { continue }
                 state.nextAttempt = now + 3
@@ -143,7 +154,22 @@ struct MonitorBrightnessPolicy {
 
     func target(for identity: MonitorBrightnessIdentity) -> Double? { preferences.targets.first { $0.identity == identity }?.level }
     func failed(_ identity: MonitorBrightnessIdentity) -> Bool { connections[identity]?.failed == true }
-    func restoring(_ identity: MonitorBrightnessIdentity) -> Bool { identity.transport == .native && connections[identity]?.ready == false && !failed(identity) }
+    func restoring(_ identity: MonitorBrightnessIdentity) -> Bool { connections[identity]?.ready == false && !failed(identity) }
+
+    /// Match the current attempt, not an acknowledgement from an older connection
+    /// or an earlier brightness-key press. Errors leave the retry budget active.
+    @discardableResult
+    mutating func acknowledge(_ identity: MonitorBrightnessIdentity, connection: String,
+                              level: Double, requestedAt: TimeInterval, success: Bool) -> Bool {
+        guard preferences.enabled, identity.transport == .displayLink,
+              let desired = target(for: identity), let level = valid(level), abs(desired - level) < 0.006,
+              var state = connections[identity], state.token == connection,
+              state.requestedAt == requestedAt, !state.failed else { return false }
+        state.requestedAt = nil
+        if success { state.ready = true }
+        connections[identity] = state
+        return true
+    }
 
     private mutating func save(_ identity: MonitorBrightnessIdentity, _ level: Double) {
         if let index = preferences.targets.firstIndex(where: { $0.identity == identity }) { preferences.targets[index].level = level }

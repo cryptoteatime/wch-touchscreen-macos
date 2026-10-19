@@ -13,9 +13,9 @@ Monitor buttons can override a screen's brightness until the next MacBook bright
 | Connection | Button changes | Reconnect or login |
 | --- | --- | --- |
 | Supported native Apple Silicon display, such as the tested Type-c panel | WCH reads the hardware level and remembers a stable change | WCH restores the saved level after the connection settles, verifies it, and retries for a bounded period |
-| DisplayLink, such as the tested HDMI panel | Buttons work, but DisplayLink's reported level stays cached | WCH leaves the panel's own retained setting alone; it cannot reliably restore an unreadable button override |
+| DisplayLink, such as the tested HDMI panel | Buttons work, but DisplayLink's reported level stays cached | WCH restores its saved level after the connection settles and waits for DisplayLink's acknowledgement |
 
-The tested HDMI panel retains its own setting. Other hardware may reset it. If that happens, choose **Match MacBook Brightness Now** or adjust the MacBook brightness again. WCH deliberately does not write a stale cached level over a physical-button adjustment on reconnect.
+DisplayLink restoration uses the last level saved by WCH, even when the reported cache already matches it. WCH makes at most four attempts, then reports a failure while retaining the target. After a successful acknowledgement, it stops writing until another reconnect or a MacBook brightness change. Hardware-button changes on that connection cannot be captured for the next reconnect; the saved WCH level takes precedence then.
 
 If the Type-c panel resets to a low startup default, that default does not replace its saved level. A failed restore keeps the saved target and reports the failure. Allow roughly fifteen seconds after reconnecting before adjusting its physical buttons so the initial restoration can finish.
 
@@ -41,4 +41,4 @@ The MacBook is read through `DisplayServicesGetBrightness`; WCH never writes its
 
 Preferences and monitor identifiers are stored locally in `brightness.json` with owner-only file permissions. The installer backs this up with the other settings. Do not upload this file or raw diagnostic output to GitHub; see [privacy](../SECURITY.md).
 
-For local diagnostics, the installed executable accepts `brightness-status`, `follow-brightness`, `brightness-independent`, `remember-brightness`, `sync-brightness`, `restore-brightness`, and `brightness-off`. `restore-brightness` retries native restoration only. All normal operation is available from the WCH menu.
+For local diagnostics, the installed executable accepts `brightness-status`, `follow-brightness`, `brightness-independent`, `remember-brightness`, `sync-brightness`, `restore-brightness`, and `brightness-off`. `restore-brightness` retries restoration on both supported transports. All normal operation is available from the WCH menu.

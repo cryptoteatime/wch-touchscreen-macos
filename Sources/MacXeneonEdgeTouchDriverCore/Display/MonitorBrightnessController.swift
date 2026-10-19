@@ -27,7 +27,7 @@ final class MonitorBrightnessController {
     private var displayLinkEndpoints: [DisplayLinkMonitorBrightness.Endpoint] = []
     private var samples: [MonitorBrightnessSample] = []
     private var writeStatus: [MonitorBrightnessIdentity: String] = [:]
-    private var pending: [MonitorBrightnessIdentity: (Double, TimeInterval)] = [:]
+    private var pending: [MonitorBrightnessIdentity: (level: Double, requestedAt: TimeInterval, connection: String)] = [:]
 
     init(configuration: DriverConfiguration, url: URL = defaultURL()) {
         vendor = configuration.display.vendorNumber; model = configuration.display.modelNumber
@@ -73,7 +73,7 @@ final class MonitorBrightnessController {
             guard let self else { return }
             self.sleeping = value
             self.policy.resetConnections(); self.lastPoll = -10
-            self.sourceLevel = nil; self.candidateSource = nil; self.pending.removeAll()
+            self.sourceLevel = nil; self.candidateSource = nil; self.pending.removeAll(); self.writeStatus.removeAll()
             if !value { self.displayLink.refresh() }
         }
     }
@@ -107,7 +107,9 @@ final class MonitorBrightnessController {
                     self.loadError = nil; self.sourceLevel = source
                     self.apply(self.policy.synchronize(source, samples: self.samples, now: now, including: self.eligibleIdentities()), now: now)
                 } else { error = "The built-in brightness is unavailable." }
-            case "restore-brightness": self.policy.resetConnections(); self.lastPoll = -10
+            case "restore-brightness":
+                self.policy.resetConnections(); self.lastPoll = -10
+                self.pending.removeAll(); self.writeStatus.removeAll()
             default: break
             }
             self.save()
@@ -150,6 +152,7 @@ final class MonitorBrightnessController {
     }
 
     private func poll(_ now: TimeInterval) {
+        let previousSamples = samples
         let displays = DisplayResolver.activeDisplaySnapshots().filter { !$0.builtIn }
         let direct = native.endpoints(vendor: profiles == nil ? vendor : nil, model: profiles == nil ? model : nil)
         let needed: Bool
@@ -171,6 +174,16 @@ final class MonitorBrightnessController {
         }
         samples = nativeEndpoints.map { MonitorBrightnessSample(identity: $0.identity, connection: $0.connection, level: native.level($0)) } +
             displayLinkEndpoints.map { MonitorBrightnessSample(identity: $0.identity, connection: $0.connection, level: $0.reportedLevel) }
+        // An old acknowledgement must not describe a newly connected monitor.
+        pending = pending.filter { identity, request in
+            let current = samples.filter { $0.identity == identity }
+            return current.count == 1 && current[0].connection == request.connection
+        }
+        writeStatus = writeStatus.filter { identity, _ in
+            let previous = previousSamples.filter { $0.identity == identity }
+            let current = samples.filter { $0.identity == identity }
+            return previous.count == 1 && current.count == 1 && previous[0].connection == current[0].connection
+        }
     }
 
     private func profile(for identity: MonitorBrightnessIdentity) -> MonitorProfile? {
@@ -203,7 +216,7 @@ final class MonitorBrightnessController {
             case .displayLink:
                 guard let endpoint = displayLinkEndpoints.first(where: { $0.identity == write.identity }) else { continue }
                 if displayLink.set(endpoint, level: write.level) {
-                    pending[write.identity] = (write.level, now)
+                    pending[write.identity] = (write.level, now, endpoint.connection)
                     writeStatus[write.identity] = "Waiting for DisplayLink acknowledgement"
                 } else { writeStatus[write.identity] = "DisplayLink unavailable; no change made" }
             }
@@ -213,11 +226,15 @@ final class MonitorBrightnessController {
         let now = ProcessInfo.processInfo.systemUptime
         for (identity, request) in Array(pending) {
             if let endpoint = displayLinkEndpoints.first(where: { $0.identity == identity }),
-               let result = displayLink.result(for: endpoint, after: request.1), abs(result.0 - request.0) < 0.006 {
-                writeStatus[identity] = result.1 == 0 ? "DisplayLink acknowledged the setting" : "DisplayLink reported error \(result.1)"
+               endpoint.connection == request.connection,
+               let result = displayLink.result(for: endpoint, after: request.requestedAt), abs(result.0 - request.level) < 0.006 {
+                if policy.acknowledge(identity, connection: request.connection, level: result.0,
+                                      requestedAt: request.requestedAt, success: result.1 == 0) {
+                    writeStatus[identity] = result.1 == 0 ? "DisplayLink acknowledged the setting" : "DisplayLink reported error \(result.1)"
+                }
                 pending.removeValue(forKey: identity)
-            } else if now - request.1 >= 5 {
-                writeStatus[identity] = "DisplayLink did not acknowledge; no automatic retry"
+            } else if now - request.requestedAt >= 5 {
+                writeStatus[identity] = "DisplayLink did not acknowledge the setting"
                 pending.removeValue(forKey: identity)
             }
         }
@@ -248,7 +265,7 @@ final class MonitorBrightnessController {
             "monitors": monitors,
             "status": loadError ?? (policy.preferences.enabled ? (followingIdentities().isEmpty ? "Remembering independent monitor brightness" : "Following MacBook brightness changes on selected monitors") : "Brightness control is off")]
         if !displayLinkEndpoints.isEmpty {
-            result["displayLinkNote"] = "DisplayLink's reported level is cached. Button overrides are not read live; reconnect keeps the monitor's own setting."
+            result["displayLinkNote"] = "DisplayLink's reported level is cached. Reconnect restores WCH's saved level; physical-button overrides cannot be remembered."
         }
         if let level = native.builtInLevel() { result["builtInPercent"] = Int((level * 100).rounded()) }
         if let profiles {
