@@ -8,8 +8,8 @@ struct MacXeneonEdgeTouchDriverMain {
         let arguments = Array(CommandLine.arguments.dropFirst())
         if !arguments.isEmpty {
             guard arguments.count == 1,
-                  ["status", "re-pair", "cancel-pairing"].contains(arguments[0]) else {
-                print("Usage: MacXeneonEdgeTouchDriver [status | re-pair | cancel-pairing]")
+                  ["status", "re-pair", "cancel-pairing", "layout-status", "save-layout", "restore-layout"].contains(arguments[0]) else {
+                print("Usage: MacXeneonEdgeTouchDriver [status | re-pair | cancel-pairing | layout-status | save-layout | restore-layout]")
                 exit(arguments == ["--help"] ? EXIT_SUCCESS : EXIT_FAILURE)
             }
             do {

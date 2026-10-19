@@ -2,6 +2,12 @@ import Foundation
 
 /// Runtime configuration loaded from the user's Application Support directory.
 public struct DriverConfiguration: Codable, Equatable {
+    /// Opt-in: trust the same USB connection and a unique display descriptor across sessions.
+    public var rememberConnections: Bool = false
+    /// Secondary-panel focus restoration is optional; normal touch keeps the touched window active.
+    public var restorePreviousFocus: Bool = false
+    /// Remember the complete connected desktop; never overwrite it while undocked.
+    public var rememberDesktopLayout: Bool = false
     /// Logging verbosity name.
     public var logLevel: String
 
@@ -95,6 +101,9 @@ public struct DriverConfiguration: Codable, Equatable {
     private static func apply(_ partial: PartialConfiguration) -> ConfigurationLoadResult {
         var configuration = DriverConfiguration.defaults
         var warnings: [String] = []
+        if let value = partial.rememberConnections { configuration.rememberConnections = value }
+        if let value = partial.restorePreviousFocus { configuration.restorePreviousFocus = value }
+        if let value = partial.rememberDesktopLayout { configuration.rememberDesktopLayout = value }
 
         if let logLevel = partial.logLevel {
             if DriverLogLevel(configurationName: logLevel) != nil {
@@ -168,6 +177,13 @@ public struct DriverConfiguration: Codable, Equatable {
             if let value = gesture.doubleClickDistancePoints {
                 configuration.gesture.doubleClickDistancePoints = clamp(value, to: 1...100, name: "gesture.doubleClickDistancePoints", warnings: &warnings)
             }
+            if let value = gesture.rightClickHoldMs {
+                configuration.gesture.rightClickHoldMs = clamp(value, to: 300...4_000, name: "gesture.rightClickHoldMs", warnings: &warnings)
+            }
+            if configuration.gesture.rightClickHoldMs < configuration.gesture.holdToDragMs + 150 {
+                configuration.gesture.rightClickHoldMs = configuration.gesture.holdToDragMs + 150
+                warnings.append("Right-click hold was extended to leave time to start dragging.")
+            }
         }
 
         if let diagnostics = partial.diagnostics {
@@ -220,6 +236,7 @@ public extension DriverConfiguration {
 
     /// Gesture configuration.
     struct Gesture: Codable, Equatable {
+        public var rightClickHoldMs: Int = 650
         public var multiTouchEnabled: Bool
         public var pinchHysteresisPx: Int
         public var minPinchForMagnify: Int
@@ -253,6 +270,9 @@ public struct ConfigurationLoadResult: Equatable {
 }
 
 private struct PartialConfiguration: Decodable {
+    var rememberConnections: Bool?
+    var restorePreviousFocus: Bool?
+    var rememberDesktopLayout: Bool?
     var logLevel: String?
     var timing: PartialTiming?
     var display: PartialDisplay?
@@ -277,6 +297,7 @@ private struct PartialDisplay: Decodable {
 }
 
 private struct PartialGesture: Decodable {
+    var rightClickHoldMs: Int?
     var multiTouchEnabled: Bool?
     var pinchHysteresisPx: Int?
     var minPinchForMagnify: Int?

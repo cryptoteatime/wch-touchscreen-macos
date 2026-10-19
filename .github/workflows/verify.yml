@@ -1,0 +1,19 @@
+name: Verify
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift package tests
+        run: swift test
+      - name: Standalone regression checks
+        run: python3 Scripts/test-regressions.py
+      - name: Build and verify app bundle
+        run: python3 Scripts/build-app.py
+      - name: Check command interface without starting HID
+        run: '"artifacts/WCH Touch Driver.app/Contents/MacOS/MacXeneonEdgeTouchDriver" --help'

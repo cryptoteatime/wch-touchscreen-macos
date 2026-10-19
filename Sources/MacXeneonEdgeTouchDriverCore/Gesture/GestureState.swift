@@ -11,9 +11,11 @@ public enum GestureState: Equatable {
 public struct SingleTouchContext: Equatable {
     public enum Phase: Equatable {
         case pending
+        case holding
         case scrolling
         case dragging
         case finishingTap
+        case finishingSecondaryClick
     }
 
     /// Contact identifier. Current hardware always uses `0`.

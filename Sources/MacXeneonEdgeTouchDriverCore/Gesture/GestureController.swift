@@ -30,6 +30,7 @@ public final class GestureController {
     private var lastCompletedTouchTimestamp: DispatchTime?
     private var eligibleFirstTap: EligibleTap?
     private var hasCapturedFocus = false
+    private var contactStartedAt: DispatchTime?
 
     public init(
         mapperProvider: @escaping () -> CoordinateMapper?,
@@ -88,6 +89,7 @@ public final class GestureController {
     }
 
     public func forceCancel() {
+        let releaseIsPending = pendingMouseUp != nil
         cancelPendingWork()
         resetDoubleClickSequence()
 
@@ -99,9 +101,13 @@ public final class GestureController {
             switch context.phase {
             case .scrolling:
                 inputSink.postScroll(deltaX: 0, deltaY: 0, phase: .ended)
-            case .dragging, .finishingTap:
+            case .dragging:
                 inputSink.postMouseUp(at: context.lastPoint, clickCount: context.clickCount)
-            case .pending:
+            case .finishingTap:
+                if releaseIsPending { inputSink.postMouseUp(at: context.lastPoint, clickCount: context.clickCount) }
+            case .finishingSecondaryClick:
+                if releaseIsPending { inputSink.postRightMouseUp(at: context.lastPoint) }
+            case .pending, .holding:
                 break
             }
             cursorController.returnToOrigin()
@@ -116,6 +122,7 @@ public final class GestureController {
         continuesTapSequence: Bool
     ) {
         guard continuesTapSequence || !isDebounced(event.timestamp) else { return }
+        contactStartedAt = event.timestamp
 
         if continuesTapSequence {
             pendingFocusRestore?.cancel()
@@ -134,6 +141,15 @@ public final class GestureController {
             phase: .pending,
             clickCount: 1
         ))
+        if continuesTapSequence, timing.rightClickHoldMs > 0 {
+            guard borrowCursor(at: point), case .singleTouch(var context) = state else { return }
+            context.phase = .dragging
+            context.clickCount = 2
+            state = .singleTouch(context)
+            resetDoubleClickSequence()
+            inputSink.postMouseDown(at: point, clickCount: 2)
+            return
+        }
         scheduleHoldToDrag(contactID: event.contactID)
     }
 
@@ -183,11 +199,23 @@ public final class GestureController {
                 deltaY: deltaY * timing.scrollSensitivity,
                 phase: .changed
             )
+        case .holding:
+            let distance = hypot(point.x - context.startPoint.x, point.y - context.startPoint.y)
+            guard distance >= timing.movementThresholdPoints else {
+                state = .singleTouch(updated)
+                return
+            }
+            updated.phase = .dragging
+            state = .singleTouch(updated)
+            resetDoubleClickSequence()
+            inputSink.postMouseDown(at: context.startPoint, clickCount: 1)
+            cursorController.updatePosition(point)
+            inputSink.postMouseDragged(to: point)
         case .dragging:
             state = .singleTouch(updated)
             cursorController.updatePosition(point)
             inputSink.postMouseDragged(to: point)
-        case .finishingTap:
+        case .finishingTap, .finishingSecondaryClick:
             break
         }
     }
@@ -203,8 +231,25 @@ public final class GestureController {
         updated.lastRawY = event.rawY
 
         switch context.phase {
-        case .pending:
+        case .pending, .holding:
             guard borrowCursor(at: context.startPoint) else { return }
+            if timing.rightClickHoldMs > 0, let began = contactStartedAt,
+               event.timestamp.uptimeNanoseconds >= began.uptimeNanoseconds,
+               event.timestamp.uptimeNanoseconds - began.uptimeNanoseconds >= UInt64(timing.rightClickHoldMs) * 1_000_000 {
+                resetDoubleClickSequence()
+                updated.phase = .finishingSecondaryClick
+                updated.lastPoint = context.startPoint
+                state = .singleTouch(updated)
+                inputSink.postRightMouseDown(at: context.startPoint)
+                pendingMouseUp = schedule(after: timing.downToUpDelayMs) { [weak self] in
+                    guard let self, case .singleTouch(let current) = self.state,
+                          current.contactID == context.contactID, current.phase == .finishingSecondaryClick else { return }
+                    self.inputSink.postRightMouseUp(at: context.startPoint)
+                    self.pendingMouseUp = nil
+                    self.scheduleCursorReturn(contactID: context.contactID, completedTapClickCount: nil)
+                }
+                return
+            }
             let clickCount = clickCountForTap(at: context.startPoint, timestamp: event.timestamp)
             updated.phase = .finishingTap
             updated.lastPoint = context.startPoint
@@ -224,9 +269,9 @@ public final class GestureController {
         case .dragging:
             resetDoubleClickSequence()
             state = .singleTouch(updated)
-            inputSink.postMouseUp(at: point, clickCount: 1)
+            inputSink.postMouseUp(at: point, clickCount: context.clickCount)
             scheduleCursorReturn(contactID: context.contactID, completedTapClickCount: nil)
-        case .finishingTap:
+        case .finishingTap, .finishingSecondaryClick:
             break
         }
     }
@@ -240,11 +285,13 @@ public final class GestureController {
             self.pendingHold = nil
             guard self.mayBeginHold() else { self.forceCancel(); return }
             guard self.borrowCursor(at: context.startPoint) else { return }
-            context.phase = .dragging
+            context.phase = self.timing.rightClickHoldMs > 0 ? .holding : .dragging
             context.clickCount = 1
             self.state = .singleTouch(context)
             self.resetDoubleClickSequence()
-            self.inputSink.postMouseDown(at: context.startPoint, clickCount: 1)
+            if self.timing.rightClickHoldMs == 0 {
+                self.inputSink.postMouseDown(at: context.startPoint, clickCount: 1)
+            }
         }
     }
 

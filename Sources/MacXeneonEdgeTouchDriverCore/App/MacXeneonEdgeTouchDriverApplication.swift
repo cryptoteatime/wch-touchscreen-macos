@@ -7,6 +7,8 @@ import Foundation
 /// Production wiring for independent, persisted touchscreen-to-display sessions.
 public final class MacXeneonEdgeTouchDriverApplication {
     private let configuration: DriverConfiguration
+    private var settingsController: DriverSettingsController?
+    private var desktopLayoutController: DesktopLayoutController?
     private let displayResolver: DisplayResolver
     private let pairingStore: PairingStore
     private let pairingOverlay: PairingOverlayPresenting
@@ -73,9 +75,11 @@ public final class MacXeneonEdgeTouchDriverApplication {
             configuration: configuration,
             displayResolver: DisplayResolver(configuration: configuration.display),
             inputSink: CGEventInputSink(),
-            cursorController: CGCursorController(),
-            focusRestorerProvider: { AXFocusRestorer() },
-            pairingStore: PairingStore(),
+            cursorController: CGCursorController(restoreOriginalPosition: false, hidesCursorWhileTouching: false),
+            focusRestorerProvider: {
+                configuration.restorePreviousFocus ? AXFocusRestorer() as FocusRestorer : NoOpFocusRestorer()
+            },
+            pairingStore: PairingStore(rememberConnections: configuration.rememberConnections),
             pairingOverlay: PairingOverlayController(),
             requiredStablePairingTopologyObservations: 2,
             pairingTopologyRetryDelay: .milliseconds(750)
@@ -126,6 +130,8 @@ public final class MacXeneonEdgeTouchDriverApplication {
             stop()
             return EXIT_FAILURE
         }
+        settingsController = DriverSettingsController()
+        desktopLayoutController = DesktopLayoutController(configuration: configuration)
 
         // Keep coordinate captures out of the operational log so a storm cannot
         // crowd out several days of lifecycle/pairing evidence.
@@ -148,6 +154,10 @@ public final class MacXeneonEdgeTouchDriverApplication {
         do {
             try control.start { [weak self] command, reply in
                 guard let self else { reply("{\"error\":\"Driver stopped\"}"); return }
+                if ["layout-status", "save-layout", "restore-layout"].contains(command), let layout = self.desktopLayoutController {
+                    layout.request(command, reply: reply)
+                    return
+                }
                 self.gestureQueue.async { reply(self.handleControlCommand(command)) }
             }
             try hidMonitor.start()
@@ -159,6 +169,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
 
         scheduleDisplayReconciliation(reason: "startup", delay: .milliseconds(500))
         startObservation()
+        desktopLayoutController?.start()
 
         isApplicationEventLoopRunning = true
         NSApp.run()
@@ -169,6 +180,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
     public func stop() {
         guard isRunning else { return }
         isRunning = false
+        desktopLayoutController?.stop()
         observationGate.stop()
         hidMonitor.stop()
         control.stop()
@@ -469,6 +481,13 @@ public final class MacXeneonEdgeTouchDriverApplication {
             )
         }
         compatibleDisplays = displayResolver.matchingDisplays(from: activeDisplays)
+        do {
+            try pairingStore.rememberVerifiedRuntimePairings(
+                connectedDevices: connectedDevices, displays: compatibleDisplays
+            )
+        } catch {
+            DriverLoggers.log(.error, category: .display, "Could not remember verified connections: \(error.localizedDescription)")
+        }
         let resolvedDisplays = Dictionary(uniqueKeysWithValues: connectedDevices.compactMap { device in
             pairingStore.resolveDisplay(
                 for: device,
@@ -480,7 +499,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
         for device in connectedDevices {
             ensureSession(for: device)
             let display = resolvedDisplays[device]
-            let mapper = display.map { CoordinateMapper(displayBounds: $0.bounds) }
+            let mapper = display.map { CoordinateMapper(displayBounds: $0.bounds, rotationDegrees: $0.rotationDegrees) }
             if mapper == nil, sessions[device]?.mapperStore.currentMapper != nil {
                 sessions[device]?.gesture.forceCancel()
                 sessions[device]?.resetHealthyInput()
@@ -677,13 +696,14 @@ public final class MacXeneonEdgeTouchDriverApplication {
 
     private func refreshSessionMapper(for device: TouchDeviceIdentity, display: DisplaySnapshot) {
         ensureSession(for: device)
-        sessions[device]?.mapperStore.currentMapper = CoordinateMapper(displayBounds: display.bounds)
+        sessions[device]?.mapperStore.currentMapper = CoordinateMapper(displayBounds: display.bounds, rotationDegrees: display.rotationDegrees)
     }
 
     private func scheduleStuckGestureTimer(for device: TouchDeviceIdentity) {
         cancelStuckGestureTimer()
         let timer = DispatchSource.makeTimerSource(queue: gestureQueue)
-        timer.schedule(deadline: .now() + .milliseconds(configuration.timing.stuckGestureTimeoutMs))
+        let timeout = max(configuration.timing.stuckGestureTimeoutMs, configuration.gesture.rightClickHoldMs + 1_000)
+        timer.schedule(deadline: .now() + .milliseconds(timeout))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             DriverLoggers.log(.warning, category: .gesture, "Touch gesture timed out; forcing cleanup.")
@@ -1378,6 +1398,7 @@ private struct PairingDisplaySignature: Equatable {
     let modelNumber: UInt32
     let serialNumber: UInt32
     let bounds: CGRect
+    let rotationDegrees: Int
 
     init(_ display: DisplaySnapshot) {
         displayID = display.displayID
@@ -1385,6 +1406,7 @@ private struct PairingDisplaySignature: Equatable {
         modelNumber = display.modelNumber
         serialNumber = display.serialNumber
         bounds = display.bounds
+        rotationDegrees = display.rotationDegrees
     }
 }
 

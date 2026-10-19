@@ -1,3 +1,14 @@
+# Fork 1.2.0 — 2026-10-19
+
+- Portrait touch mapping, persistent USB connection preferences, visible pointer and optional previous-window focus restoration.
+- Long-press secondary click, double-click dragging, settings and gesture reference UI.
+- Saved external display geometry and ordinary window placement across reconnects.
+- Reopened-window matching across login sessions, a three-minute launch grace period, and local salted metadata fingerprints.
+- App-bundle build/install/recovery scripts, generic portable profile, regression checks and macOS CI.
+- Credits, inherited Git history and original MIT notice retained. Initial public fork release; see README for verified hardware and remaining cold-boot validation.
+
+---
+
 # Changelog
 
 ## Unreleased

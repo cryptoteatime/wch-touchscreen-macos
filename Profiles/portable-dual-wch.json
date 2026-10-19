@@ -1,0 +1,18 @@
+{
+  "rememberConnections": true,
+  "rememberDesktopLayout": true,
+  "restorePreviousFocus": false,
+  "display": {
+    "vendorNumber": 19083,
+    "modelNumber": 8704,
+    "expectedWidth": 1200,
+    "expectedHeight": 1920
+  },
+  "gesture": {
+    "holdToDragMs": 300,
+    "rightClickHoldMs": 650,
+    "movementThresholdPoints": 8,
+    "scrollSensitivity": 1.0,
+    "doubleClickDistancePoints": 12
+  }
+}

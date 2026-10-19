@@ -3,6 +3,40 @@ import CoreGraphics
 import XCTest
 
 final class GestureControllerTests: XCTestCase {
+    func testLongPressRightClicksWithoutSendingAnEarlyLeftClick() {
+        let input = RecordingInputSink()
+        let queue = DispatchQueue(label: "gesture.long-press-test")
+        let controller = makeController(input: input, cursor: RecordingCursorController(),
+            timing: GestureTiming(warpToClickDelayMs: 0, downToUpDelayMs: 0,
+                clickToWarpBackDelayMs: 0, tapDebounceMs: 0, holdToDragMs: 20, rightClickHoldMs: 50),
+            schedulingQueue: queue)
+        let complete = expectation(description: "stationary long press")
+        queue.async {
+            controller.handle(self.event(.down, rawX: 0, rawY: 0, timestampNanoseconds: 1_000_000_000))
+        }
+        queue.asyncAfter(deadline: .now() + .milliseconds(40)) {
+            XCTAssertTrue(input.calls.isEmpty)
+            controller.handle(self.event(.up, rawX: 0, rawY: 0, timestampNanoseconds: 1_080_000_000))
+            complete.fulfill()
+        }
+        wait(for: [complete], timeout: 1)
+        XCTAssertEqual(input.calls, [.rightMouseDown(CGPoint(x: 100, y: 200)), .rightMouseUp(CGPoint(x: 100, y: 200))])
+    }
+
+    func testDoubleTapThenMoveKeepsTheSecondMouseButtonPressDown() {
+        let input = RecordingInputSink()
+        let controller = makeController(input: input, cursor: RecordingCursorController(),
+            timing: GestureTiming(warpToClickDelayMs: 0, downToUpDelayMs: 0,
+                clickToWarpBackDelayMs: 0, tapDebounceMs: 0, holdToDragMs: 300, rightClickHoldMs: 650))
+        controller.handle(event(.down, rawX: 0, rawY: 0, timestampNanoseconds: 1_000_000_000))
+        controller.handle(event(.up, rawX: 0, rawY: 0, timestampNanoseconds: 1_020_000_000))
+        controller.handle(event(.down, rawX: 0, rawY: 0, timestampNanoseconds: 1_150_000_000))
+        controller.handle(event(.move, rawX: 1000, rawY: 1000, timestampNanoseconds: 1_170_000_000))
+        controller.handle(event(.up, rawX: 1000, rawY: 1000, timestampNanoseconds: 1_200_000_000))
+        XCTAssertEqual(input.mouseClickCounts, [1, 1, 2, 2])
+        XCTAssertTrue(input.calls.contains { if case .mouseDragged = $0 { return true }; return false })
+    }
+
     func testStormTrackExpiryReleasesAnAlreadyStartedDragExactlyOnce() {
         let input = RecordingInputSink()
         let cursor = RecordingCursorController()
@@ -599,6 +633,8 @@ private final class RecordingInputSink: SyntheticInputSink {
     enum Call: Equatable {
         case mouseDown(CGPoint)
         case mouseUp(CGPoint)
+        case rightMouseDown(CGPoint)
+        case rightMouseUp(CGPoint)
         case mouseDragged(CGPoint)
         case scroll(deltaX: CGFloat, deltaY: CGFloat, phase: SyntheticScrollPhase)
     }
@@ -630,6 +666,8 @@ private final class RecordingInputSink: SyntheticInputSink {
     func postMouseDragged(to point: CGPoint) {
         append(.mouseDragged(point))
     }
+    func postRightMouseDown(at point: CGPoint) { append(.rightMouseDown(point)) }
+    func postRightMouseUp(at point: CGPoint) { append(.rightMouseUp(point)) }
 
     func postScroll(deltaX: CGFloat, deltaY: CGFloat, phase: SyntheticScrollPhase) {
         append(.scroll(deltaX: deltaX, deltaY: deltaY, phase: phase))

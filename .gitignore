@@ -23,3 +23,8 @@ xcuserdata/
 artifacts/
 hid-captures/
 diagnostics/
+__pycache__/
+*.pyc
+desktop-layout.json
+pairings.json
+window-identity-salt

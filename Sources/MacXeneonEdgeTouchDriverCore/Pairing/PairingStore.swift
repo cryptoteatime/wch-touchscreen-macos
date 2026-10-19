@@ -9,6 +9,10 @@ public enum PairingScope: String, Codable, Equatable, Sendable {
 
     /// Both endpoints exposed public hardware identifiers that were unique when calibrated.
     case hardware
+
+    /// User opted into fixed cabling. A USB location and display descriptor must each be unique.
+    /// Moving ports/hubs or exchanging identical devices can require physical pairing again.
+    case connection
 }
 
 /// Persisted one-to-one association between a USB touch controller and a display.
@@ -65,17 +69,21 @@ public final class PairingStore {
     private let fileManager: FileManager
     private let bootSessionIdentifier: String
     private let observationSession: String
+    private let rememberConnections: Bool
+    private var runtimeMigrationCandidates: [TouchDisplayPairing] = []
 
     public init(
         url: URL = PairingStore.defaultURL(),
         fileManager: FileManager = .default,
         bootSessionIdentifier: String = PairingStore.currentBootSessionIdentifier(),
-        observationSession: String = UUID().uuidString
+        observationSession: String = UUID().uuidString,
+        rememberConnections: Bool = false
     ) {
         self.url = url
         self.fileManager = fileManager
         self.bootSessionIdentifier = bootSessionIdentifier
         self.observationSession = observationSession
+        self.rememberConnections = rememberConnections
         self.pairings = []
         load()
     }
@@ -119,6 +127,18 @@ public final class PairingStore {
         displays: [DisplaySnapshot]
     ) -> DisplaySnapshot? {
         guard connectedDevices.contains(device) else { return nil }
+        if rememberConnections,
+           connectedDevices.filter({ $0.locationID == device.locationID }).count == 1 {
+            let matches = pairings.filter {
+                $0.scope == .connection && $0.device.locationID == device.locationID &&
+                $0.device.serialNumber == device.serialNumber
+            }
+            if matches.count == 1, let pairing = matches.first,
+               pairings.filter({ $0.scope == .connection && sameDisplayDescriptor($0, pairing) }).count == 1 {
+                let targets = displays.filter { descriptorMatches(pairing, $0) }
+                if targets.count == 1 { return targets[0] }
+            }
+        }
         if let exact = pairings.first(where: {
             $0.scope == .bootSession &&
             $0.observationSession == observationSession &&
@@ -202,7 +222,13 @@ public final class PairingStore {
             displayKey != nil &&
             connectedDevices.filter { $0.hardwareKey == deviceKey }.count == 1 &&
             displays.filter { $0.hardwareKey == displayKey }.count == 1
-        let scope: PairingScope = hardwareIsUnique ? .hardware : .bootSession
+        let connectionIsUnique = rememberConnections && device.locationID != 0 &&
+            connectedDevices.filter { $0.locationID == device.locationID }.count == 1 &&
+            displays.filter {
+                $0.vendorNumber == display.vendorNumber && $0.modelNumber == display.modelNumber &&
+                $0.serialNumber == display.serialNumber
+            }.count == 1
+        let scope: PairingScope = connectionIsUnique ? .connection : (hardwareIsUnique ? .hardware : .bootSession)
 
         var updated = pairings
         updated.removeAll { pairing in
@@ -214,7 +240,10 @@ public final class PairingStore {
                 pairing.device.hardwareKey == deviceKey
             let sameHardwareDisplay = displayKey != nil && pairing.scope == .hardware &&
                 pairing.displayHardwareKey == displayKey
-            return sameRuntimeDevice || sameRuntimeDisplay || sameHardwareDevice || sameHardwareDisplay
+            let sameConnectionDevice = pairing.scope == .connection && pairing.device.locationID == device.locationID
+            let sameConnectionDisplay = pairing.scope == .connection && descriptorMatches(pairing, display)
+            return sameRuntimeDevice || sameRuntimeDisplay || sameHardwareDevice || sameHardwareDisplay ||
+                sameConnectionDevice || sameConnectionDisplay
         }
 
         updated.append(TouchDisplayPairing(
@@ -232,6 +261,9 @@ public final class PairingStore {
         }
         try save(updated)
         pairings = updated
+        runtimeMigrationCandidates.removeAll {
+            $0.device.locationID == device.locationID || $0.displayID == display.displayID
+        }
     }
 
     /// Revocation is immediate even if persistence fails. Old records cannot regain
@@ -243,7 +275,35 @@ public final class PairingStore {
 
     public func invalidateAll() throws {
         pairings.removeAll()
+        runtimeMigrationCandidates.removeAll()
         try save()
+    }
+
+    /// One-time upgrade of physical pairings from the still-attached, same-boot hardware.
+    /// Never infer a mapping from screen order, rotation, reused IDs, or a prior boot.
+    public func rememberVerifiedRuntimePairings(
+        connectedDevices: Set<TouchDeviceIdentity>, displays: [DisplaySnapshot]
+    ) throws {
+        guard rememberConnections else { return }
+        for candidate in runtimeMigrationCandidates {
+            guard candidate.bootSessionIdentifier == bootSessionIdentifier,
+                  candidate.calibrationRevision == TouchDisplayPairing.currentCalibrationRevision,
+                  candidate.device.registryEntryID != nil,
+                  let device = connectedDevices.first(where: { runtimeDevice(candidate.device, matches: $0) }),
+                  let display = displays.first(where: { runtimeDisplay(candidate, matches: $0) }) else { continue }
+            try assign(device: device, to: display, connectedDevices: connectedDevices, displays: displays)
+            runtimeMigrationCandidates.removeAll { $0 == candidate }
+        }
+    }
+
+    private func descriptorMatches(_ pairing: TouchDisplayPairing, _ display: DisplaySnapshot) -> Bool {
+        pairing.displayVendorNumber == display.vendorNumber &&
+        pairing.displayModelNumber == display.modelNumber && pairing.displaySerialNumber == display.serialNumber
+    }
+
+    private func sameDisplayDescriptor(_ lhs: TouchDisplayPairing, _ rhs: TouchDisplayPairing) -> Bool {
+        lhs.displayVendorNumber == rhs.displayVendorNumber &&
+        lhs.displayModelNumber == rhs.displayModelNumber && lhs.displaySerialNumber == rhs.displaySerialNumber
     }
 
     public func remove(device: TouchDeviceIdentity) throws {
@@ -304,12 +364,24 @@ public final class PairingStore {
                 DriverLoggers.log(.notice, category: .display, "Saved pairings require the current physical calibration flow.")
                 return
             }
+            if rememberConnections {
+                runtimeMigrationCandidates = decoded.pairings.filter {
+                    candidate in
+                    candidate.scope == .bootSession && candidate.bootSessionIdentifier == bootSessionIdentifier &&
+                    candidate.calibrationRevision == TouchDisplayPairing.currentCalibrationRevision &&
+                    decoded.pairings.filter {
+                        $0.device.locationID == candidate.device.locationID || $0.displayID == candidate.displayID
+                    }.count == 1
+                }
+            }
             let bootCompatiblePairings = decoded.pairings.filter {
                 $0.calibrationRevision == TouchDisplayPairing.currentCalibrationRevision &&
-                ($0.scope == .hardware || $0.observationSession == observationSession)
+                ($0.scope == .hardware || ($0.scope == .connection && rememberConnections) ||
+                 $0.observationSession == observationSession)
             }
             let retainedPairings = bootCompatiblePairings.filter {
-                $0.scope == .hardware || $0.bootSessionIdentifier == bootSessionIdentifier
+                $0.scope == .hardware || ($0.scope == .connection && rememberConnections) ||
+                $0.bootSessionIdentifier == bootSessionIdentifier
             }
             // Reject every conflicting association, not just the first record.
             pairings = retainedPairings.filter { candidate in

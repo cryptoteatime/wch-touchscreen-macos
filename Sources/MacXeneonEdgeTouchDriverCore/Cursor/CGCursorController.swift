@@ -4,13 +4,19 @@ import Foundation
 /// Borrows the system cursor while a touch gesture is active.
 public final class CGCursorController: CursorController {
     private let displayIDProvider: () -> CGDirectDisplayID
+    private let restoreOriginalPosition: Bool
+    private let hidesCursorWhileTouching: Bool
     private var savedCursorPosition: CGPoint?
     private var isCursorHidden = false
     private var isCursorAssociated = true
 
     /// Creates a CoreGraphics cursor controller.
-    public init(displayIDProvider: @escaping () -> CGDirectDisplayID = CGMainDisplayID) {
+    public init(displayIDProvider: @escaping () -> CGDirectDisplayID = CGMainDisplayID,
+                restoreOriginalPosition: Bool = true,
+                hidesCursorWhileTouching: Bool = true) {
         self.displayIDProvider = displayIDProvider
+        self.restoreOriginalPosition = restoreOriginalPosition
+        self.hidesCursorWhileTouching = hidesCursorWhileTouching
     }
 
     public func borrow(warpingTo point: CGPoint) -> Bool {
@@ -23,7 +29,7 @@ public final class CGCursorController: CursorController {
             }
 
             savedCursorPosition = currentPosition
-            hideCursor()
+            if hidesCursorWhileTouching { hideCursor() }
             setCursorAssociation(false)
         }
 
@@ -55,7 +61,7 @@ public final class CGCursorController: CursorController {
         }
 
         setCursorAssociation(true)
-        _ = warp(to: savedCursorPosition)
+        if restoreOriginalPosition { _ = warp(to: savedCursorPosition) }
         self.savedCursorPosition = nil
         showCursor()
     }

@@ -38,7 +38,7 @@ struct PairingChallenge {
             decision = "competing_controller"
             return .rejected
         }
-        let point = CoordinateMapper(displayBounds: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let point = CoordinateMapper(displayBounds: CGRect(x: 0, y: 0, width: 1, height: 1), clampsToPixelInterior: false)
             .map(rawX: touch.rawX, rawY: touch.rawY)
         let target = Self.target
         guard abs(point.x - target.x) <= 0.08, abs(point.y - target.y) <= 0.12 else {

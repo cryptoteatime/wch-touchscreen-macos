@@ -25,6 +25,8 @@ public struct GestureTiming: Equatable {
 
     /// Maximum mapped distance between two taps that may form a double-click.
     public let doubleClickDistancePoints: CGFloat
+    /// Zero preserves legacy hold-to-drag; otherwise a stationary release after this time right-clicks.
+    public let rightClickHoldMs: Int
 
     /// Creates gesture timing values in milliseconds.
     public init(
@@ -35,7 +37,8 @@ public struct GestureTiming: Equatable {
         holdToDragMs: Int = 300,
         movementThresholdPoints: CGFloat = 8,
         scrollSensitivity: CGFloat = 1,
-        doubleClickDistancePoints: CGFloat = 12
+        doubleClickDistancePoints: CGFloat = 12,
+        rightClickHoldMs: Int = 0
     ) {
         self.warpToClickDelayMs = max(0, warpToClickDelayMs)
         self.downToUpDelayMs = max(0, downToUpDelayMs)
@@ -45,6 +48,7 @@ public struct GestureTiming: Equatable {
         self.movementThresholdPoints = max(1, movementThresholdPoints)
         self.scrollSensitivity = max(0.1, scrollSensitivity)
         self.doubleClickDistancePoints = max(1, doubleClickDistancePoints)
+        self.rightClickHoldMs = max(0, rightClickHoldMs)
     }
 
     /// Creates gesture timing from loaded driver configuration.
@@ -57,7 +61,8 @@ public struct GestureTiming: Equatable {
             holdToDragMs: gesture.holdToDragMs,
             movementThresholdPoints: CGFloat(gesture.movementThresholdPoints),
             scrollSensitivity: CGFloat(gesture.scrollSensitivity),
-            doubleClickDistancePoints: CGFloat(gesture.doubleClickDistancePoints)
+            doubleClickDistancePoints: CGFloat(gesture.doubleClickDistancePoints),
+            rightClickHoldMs: gesture.rightClickHoldMs
         )
     }
 

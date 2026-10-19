@@ -23,6 +23,14 @@ public final class CGEventInputSink: SyntheticInputSink {
         postMouseEvent(type: .leftMouseUp, at: point, clickCount: clickCount)
     }
 
+    public func postRightMouseDown(at point: CGPoint) {
+        postMouseEvent(type: .rightMouseDown, at: point, button: .right)
+    }
+
+    public func postRightMouseUp(at point: CGPoint) {
+        postMouseEvent(type: .rightMouseUp, at: point, button: .right)
+    }
+
     public func postMouseDragged(to point: CGPoint) {
         postMouseEvent(type: .leftMouseDragged, at: point)
     }
@@ -45,19 +53,20 @@ public final class CGEventInputSink: SyntheticInputSink {
         event.post(tap: eventTap)
     }
 
-    private func postMouseEvent(type: CGEventType, at point: CGPoint, clickCount: Int = 1) {
+    private func postMouseEvent(type: CGEventType, at point: CGPoint, clickCount: Int = 1,
+                                button: CGMouseButton = .left) {
         guard let event = CGEvent(
             mouseEventSource: eventSource,
             mouseType: type,
             mouseCursorPosition: point,
-            mouseButton: .left
+            mouseButton: button
         ) else {
             DriverLoggers.log(.error, category: .gesture, "Failed to create CoreGraphics mouse event of type \(type.rawValue).")
             return
         }
 
-        event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(CGMouseButton.left.rawValue))
-        if type == .leftMouseDown || type == .leftMouseUp {
+        event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(button.rawValue))
+        if type == .leftMouseDown || type == .leftMouseUp || type == .rightMouseDown || type == .rightMouseUp {
             event.setIntegerValueField(.mouseEventClickState, value: Int64(max(1, clickCount)))
         }
         event.post(tap: eventTap)

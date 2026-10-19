@@ -27,6 +27,8 @@ public struct DisplaySnapshot: Equatable {
     /// Physical pixel height.
     public let pixelsHigh: Int
 
+    public let rotationDegrees: Int
+
     /// Creates a display snapshot for matching or tests.
     public init(
         displayID: CGDirectDisplayID,
@@ -36,7 +38,8 @@ public struct DisplaySnapshot: Equatable {
         serialNumber: UInt32,
         bounds: CGRect,
         pixelsWide: Int,
-        pixelsHigh: Int
+        pixelsHigh: Int,
+        rotationDegrees: Int = 0
     ) {
         self.displayID = displayID
         self.runtimeIdentifier = runtimeIdentifier.isEmpty ? "display-\(displayID)" : runtimeIdentifier
@@ -46,6 +49,7 @@ public struct DisplaySnapshot: Equatable {
         self.bounds = bounds
         self.pixelsWide = pixelsWide
         self.pixelsHigh = pixelsHigh
+        self.rotationDegrees = rotationDegrees
     }
 
     /// Public hardware key usable only after the pairing coordinator proves uniqueness.
@@ -91,9 +95,10 @@ public final class DisplayResolver {
 
         currentDisplayID = match?.displayID
         currentBounds = match?.bounds
-        currentMapper = match.map { CoordinateMapper(displayBounds: $0.bounds) }
+        let previousMapper = currentMapper
+        currentMapper = match.map { CoordinateMapper(displayBounds: $0.bounds, rotationDegrees: $0.rotationDegrees) }
 
-        if currentBounds != previousBounds || currentDisplayID != previousDisplayID {
+        if currentBounds != previousBounds || currentDisplayID != previousDisplayID || currentMapper != previousMapper {
             onDisplayChanged?(currentBounds)
         }
     }
@@ -178,7 +183,8 @@ public final class DisplayResolver {
             serialNumber: CGDisplaySerialNumber(displayID),
             bounds: CGDisplayBounds(displayID),
             pixelsWide: CGDisplayPixelsWide(displayID),
-            pixelsHigh: CGDisplayPixelsHigh(displayID)
+            pixelsHigh: CGDisplayPixelsHigh(displayID),
+            rotationDegrees: Int(CGDisplayRotation(displayID).rounded())
         )
     }
 
