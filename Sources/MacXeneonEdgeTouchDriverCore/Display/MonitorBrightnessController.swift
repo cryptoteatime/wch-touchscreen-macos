@@ -135,7 +135,9 @@ final class MonitorBrightnessController {
             } else { candidateSource = nil }
         }
         let polled = now - lastPoll >= 2
-        if polled { poll(now) }
+        // Status requests may refresh samples too. They must not postpone this
+        // policy cadence, or frequent diagnostics could starve override memory.
+        if polled { poll(now); lastPoll = now }
         if polled || sourceSettled {
             apply(policy.step(samples, builtIn: sourceLevel, now: now), now: now)
             save()
@@ -144,7 +146,6 @@ final class MonitorBrightnessController {
     }
 
     private func poll(_ now: TimeInterval) {
-        lastPoll = now
         displayLink.refresh()
         nativeEndpoints = native.endpoints(vendor: vendor, model: model)
         displayLinkEndpoints = displayLink.endpoints()

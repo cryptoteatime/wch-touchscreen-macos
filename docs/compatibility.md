@@ -33,7 +33,7 @@ The original Xeneon configuration remains available through `--profile xeneon`. 
 - The installed WCH app sent brightness to both panels directly. Native hardware readback confirmed the target and DisplayLink acknowledged its write; no Shortcut was involved. Both touch controllers stayed active and all nine saved windows restored after the app update.
 - A physical-button test set the HDMI panel to 70%, while a fresh DisplayLink query still reported 85%. WCH therefore does not automatically restore that cached level over HDMI button overrides. The user previously confirmed that this HDMI panel retained its own setting across reconnect.
 - The brightness policy passed 29 standalone checks, including native startup defaults, one-percent button changes, restart persistence, duplicate identities, bounded failures, and MacBook sync. Together with the existing suite, 140 standalone checks passed locally, along with an app build and signature verification.
-- Physical MacBook-key following and a reconnect/reboot of the new brightness feature still need end-to-end verification. Readback and simulation are not a substitute for these tests. See [brightness behavior and limitations](brightness.md).
+- Changing the MacBook brightness slider from 100% to 75% and back automatically updated both panels: native hardware readback matched and DisplayLink acknowledged both changes. A real reconnect/reboot of the new brightness feature remains pending; readback and simulation do not verify every power-cycle behavior. See [brightness behavior and limitations](brightness.md).
 
 The controller's current input mode supplies a single contact. Pinch-to-zoom and multi-finger gestures require a working multi-contact protocol and are not available through a settings toggle.
 
