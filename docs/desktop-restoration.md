@@ -12,7 +12,9 @@ With all saved screens connected, WCH samples the stable desktop about every two
 
 After driver startup, the saved layout is protected from automatic replacement for sixty seconds; reconnect and wake protect it for at least thirty seconds. If macOS applies a late display arrangement during this period, WCH restores the intended external geometry again. **Save Current Desktop Layout** accepts your chosen arrangement immediately if you want to override this settling period.
 
-When every saved screen returns, WCH waits at least three seconds after the latest display change, restores screen geometry, and then moves matching windows. A short visible settling period is expected.
+When every saved screen returns, WCH checks promptly after display callbacks and confirms matching hardware and geometry readings over at least half a second. It waits for macOS to finish reconfiguration, restores screen geometry, confirms the resulting state, and then moves matching windows. The two-second timer remains a fallback. Repeated attempts against unchanged geometry retain their two-second spacing and existing retry limits. A short visible settling period is expected.
+
+App launches and quits do not restart the display settling clock. They still invalidate an in-flight snapshot, and automatic saving retains its three-second quiet period after either app or display changes. The longer startup/reconnect snapshot protections above also remain active while restoration proceeds.
 
 ## Restart or log in
 

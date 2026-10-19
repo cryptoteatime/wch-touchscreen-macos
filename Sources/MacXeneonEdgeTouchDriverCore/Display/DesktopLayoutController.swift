@@ -8,10 +8,13 @@ import Foundation
 final class DesktopLayoutController {
     private let queue = DispatchQueue(label: "wch.desktop-layout", qos: .utility)
     private let signalLock = NSLock()
-    private var revision: UInt64 = 0
-    private var changedAt = ProcessInfo.processInfo.systemUptime
-    private var sleeping = false
+    private var signals = DesktopLayoutSignals(now: ProcessInfo.processInfo.systemUptime)
+    private var readiness = DesktopLayoutReadiness()
+    private var pacing = DesktopLayoutAttemptPacing()
     private var timer: DispatchSourceTimer?
+    private var promptTick: DispatchWorkItem?
+    private var promptTickAt: TimeInterval?
+    private var promptGeneration: UInt64 = 0
     private var observers: [NSObjectProtocol] = []
     private var terminationObserver: NSObjectProtocol?
     private var registered = false
@@ -71,14 +74,15 @@ final class DesktopLayoutController {
         for event in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
             observers.append(center.addObserver(forName: event, object: nil, queue: .main) { [weak self] _ in
                 guard let self else { return }
-                self.signalLock.lock(); self.revision &+= 1; self.changedAt = ProcessInfo.processInfo.systemUptime; self.signalLock.unlock()
+                self.signalLock.lock(); self.signals.applicationChanged(at: ProcessInfo.processInfo.systemUptime); self.signalLock.unlock()
+                self.queue.async { [weak self] in self?.schedulePromptTick() }
             })
         }
         queue.async { [weak self] in
             guard let self else { return }
             self.log("Loaded \(self.loadedWindowCount) saved windows; protecting the layout while login settles.")
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
-            timer.schedule(deadline: .now() + 4, repeating: 2, leeway: .milliseconds(300))
+            timer.schedule(deadline: .now(), repeating: 2, leeway: .milliseconds(300))
             timer.setEventHandler { [weak self] in self?.tick() }
             self.timer = timer
             timer.resume()
@@ -87,15 +91,20 @@ final class DesktopLayoutController {
 
     func stop() {
         // Fence an in-flight capture before queuing teardown behind it.
-        signalLock.lock(); sleeping = true; revision &+= 1; signalLock.unlock()
+        signalLock.lock(); signals.sleepChanged(true, at: ProcessInfo.processInfo.systemUptime); signalLock.unlock()
         if registered { CGDisplayRemoveReconfigurationCallback(desktopLayoutDisplayCallback, Unmanaged.passUnretained(self).toOpaque()); registered = false }
         observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }; observers.removeAll()
         if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver); self.terminationObserver = nil }
-        queue.async { [weak self] in self?.stopped = true; self?.timer?.cancel(); self?.timer = nil }
+        queue.async { [weak self] in
+            self?.stopped = true; self?.timer?.cancel(); self?.timer = nil
+            self?.promptTick?.cancel(); self?.promptTick = nil; self?.promptTickAt = nil
+        }
     }
 
-    fileprivate func displayChanged(_ flags: CGDisplayChangeSummaryFlags) {
-        signalLock.lock(); revision &+= 1; changedAt = ProcessInfo.processInfo.systemUptime; signalLock.unlock()
+    fileprivate func displayChanged(_ display: CGDirectDisplayID, _ flags: CGDisplayChangeSummaryFlags) {
+        signalLock.lock()
+        signals.displayCallback(display, beginning: flags.contains(.beginConfigurationFlag), at: ProcessInfo.processInfo.systemUptime)
+        signalLock.unlock()
         let membership = flags.contains(.addFlag) || flags.contains(.removeFlag) || flags.contains(.enabledFlag) || flags.contains(.disabledFlag)
         queue.async { [weak self] in
             guard let self else { return }
@@ -104,28 +113,52 @@ final class DesktopLayoutController {
                 if !self.policy.needsRestore { self.restorePasses = 0 }
                 self.windowProgress = DesktopWindowRestoreProgress()
                 self.policy.membershipChanged()
-                if membership { self.captureGuard.beginRecovery(at: now) }
+                if membership { self.captureGuard.beginRecovery(at: now); self.pacing = DesktopLayoutAttemptPacing() }
             }
+            self.schedulePromptTick()
         }
     }
 
     private func sleepChanged(_ asleep: Bool) {
-        signalLock.lock(); sleeping = asleep; revision &+= 1; changedAt = ProcessInfo.processInfo.systemUptime; signalLock.unlock()
+        signalLock.lock(); signals.sleepChanged(asleep, at: ProcessInfo.processInfo.systemUptime); signalLock.unlock()
         queue.async { [weak self] in
             self?.policy.membershipChanged(); self?.restorePasses = 0; self?.windowProgress = DesktopWindowRestoreProgress()
-            if !asleep { self?.captureGuard.beginRecovery(at: ProcessInfo.processInfo.systemUptime) }
+            self?.pacing = DesktopLayoutAttemptPacing()
+            if !asleep {
+                self?.captureGuard.beginRecovery(at: ProcessInfo.processInfo.systemUptime)
+                self?.schedulePromptTick()
+            }
         }
     }
 
-    private func stableRevision() -> UInt64? {
+    private func signalSnapshot() -> DesktopLayoutSignals {
         signalLock.lock(); defer { signalLock.unlock() }
-        guard !sleeping, ProcessInfo.processInfo.systemUptime - changedAt >= 3 else { return nil }
-        return revision
+        return signals
+    }
+
+    private func stableRevision() -> UInt64? {
+        let snapshot = signalSnapshot()
+        return snapshot.canCapture(at: ProcessInfo.processInfo.systemUptime) ? snapshot.revision : nil
     }
 
     private func stillCurrent(_ expected: UInt64) -> Bool {
-        signalLock.lock(); defer { signalLock.unlock() }
-        return revision == expected && !sleeping
+        signalSnapshot().isCurrent(expected)
+    }
+
+    /// Coalesce callbacks into one prompt check; the two-second timer remains
+    /// the fallback. An earlier event can bring a scheduled retry forward.
+    private func schedulePromptTick(after delay: TimeInterval = 0.25) {
+        guard !stopped else { return }
+        let deadline = ProcessInfo.processInfo.systemUptime + delay
+        if let scheduled = promptTickAt, scheduled <= deadline { return }
+        promptTick?.cancel(); promptGeneration &+= 1
+        let generation = promptGeneration
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.stopped, self.promptGeneration == generation else { return }
+            self.promptTick = nil; self.promptTickAt = nil; self.tick()
+        }
+        promptTick = work; promptTickAt = deadline
+        queue.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     func request(_ command: String, reply: @escaping (String) -> Void) {
@@ -145,6 +178,7 @@ final class DesktopLayoutController {
             } else if command == "restore-layout" {
                 if self.layout != nil {
                     self.policy.membershipChanged(); self.restorePasses = 0; self.windowProgress = DesktopWindowRestoreProgress()
+                    self.pacing = DesktopLayoutAttemptPacing()
                     self.captureGuard.beginRecovery(at: ProcessInfo.processInfo.systemUptime)
                     self.tick()
                 }
@@ -175,8 +209,17 @@ final class DesktopLayoutController {
         guard enabled, registered, !stopped else { return }
         if let loadError { status = loadError; return }
         guard AXIsProcessTrusted() else { status = "Accessibility permission is unavailable; saved layout retained"; return }
-        guard let revision = stableRevision() else { status = "Waiting for display changes to settle"; return }
+        let signal = signalSnapshot()
+        guard !signal.sleeping else { return }
+        let now = ProcessInfo.processInfo.systemUptime
         let screens = platform.screens()
+        let confirmed = readiness.observe(screens, displayRevision: signal.displayRevision, at: now)
+        guard confirmed, signal.canRestore(at: now), stillCurrent(signal.revision) else {
+            status = "Waiting for matching display readings after reconfiguration"
+            schedulePromptTick()
+            return
+        }
+        let revision = signal.revision
         let matches = layout?.matches(screens)
         let action = policy.action(hasLayout: layout != nil, completeMatch: matches != nil, canLearn: canLearn(screens))
         switch action {
@@ -190,20 +233,28 @@ final class DesktopLayoutController {
                layout.needsExternalDisplayRestore(matches: matches) {
                 policy.membershipChanged(); windowProgress = DesktopWindowRestoreProgress()
                 status = "A late display change arrived; restoring the saved arrangement again"
+                schedulePromptTick()
                 return
             }
+            // Restoration can be prompt while saving retains its original quiet
+            // period after both display changes and application lifecycle events.
+            guard signal.canCapture(at: now) else { return }
             _ = capture(screens, revision: revision)
         case .restore:
             guard let layout, let matches, stillCurrent(revision) else { return }
             guard !CGEventSource.buttonState(.combinedSessionState, button: .left),
                   !CGEventSource.buttonState(.combinedSessionState, button: .right) else { status = "Waiting for the current drag to finish"; return }
+            let delay = pacing.delay(for: screens, at: now)
+            guard delay == 0 else { schedulePromptTick(after: delay); return }
             // Bound retries even when an OS function reports success without effect.
             if restorePasses >= 12 { policy.failed = true; status = "Restore paused: display configuration did not settle. Saved layout retained."; return }
             restorePasses += 1
+            pacing.attempted(screens, at: now)
             switch platform.configure(layout, matches: matches) {
             case .changed:
                 status = "Restoring monitor orientation, resolution, and arrangement"
-                signalLock.lock(); changedAt = ProcessInfo.processInfo.systemUptime; self.revision &+= 1; signalLock.unlock()
+                signalLock.lock(); signals.displayChanged(at: ProcessInfo.processInfo.systemUptime); signalLock.unlock()
+                schedulePromptTick()
             case .unavailable(let reason):
                 policy.restoreFailed()
                 status = "\(reason) Saved layout retained\(policy.failed ? "; use Restore Saved Desktop Layout to retry." : "; will retry.")"
@@ -259,7 +310,7 @@ final class DesktopLayoutController {
             // Serialize the commit against the display callback's capture fence.
             signalLock.lock()
             defer { signalLock.unlock() }
-            guard self.revision == revision && !sleeping else { return false }
+            guard signals.isCurrent(revision) else { return false }
             try data.write(to: url, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
             layout = next; savedAt = Date()
@@ -289,5 +340,5 @@ final class DesktopLayoutController {
 
 private func desktopLayoutDisplayCallback(_ display: CGDirectDisplayID, _ flags: CGDisplayChangeSummaryFlags, _ context: UnsafeMutableRawPointer?) {
     guard let context else { return }
-    Unmanaged<DesktopLayoutController>.fromOpaque(context).takeUnretainedValue().displayChanged(flags)
+    Unmanaged<DesktopLayoutController>.fromOpaque(context).takeUnretainedValue().displayChanged(display, flags)
 }
