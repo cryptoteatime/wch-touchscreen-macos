@@ -154,7 +154,11 @@ final class MonitorBrightnessController {
     }
 
     private func apply(_ writes: [MonitorBrightnessWrite], now: TimeInterval) {
-        for write in writes {
+        // Start the asynchronous vendor writes before native I/O waits for its
+        // readback. Both transports can then change brightness during that wait.
+        let ordered = writes.filter { $0.identity.transport == .displayLink } +
+            writes.filter { $0.identity.transport == .native }
+        for write in ordered {
             switch write.identity.transport {
             case .native:
                 guard let endpoint = nativeEndpoints.first(where: { $0.identity == write.identity }) else { continue }

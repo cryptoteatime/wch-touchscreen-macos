@@ -6,7 +6,8 @@
 - Restores supported native Apple Silicon monitors through DDC/CI with bounded retries and hardware readback. Stable physical-button changes are remembered; startup defaults cannot overwrite saved targets.
 - Controls compatible DisplayLink monitors directly through Manager 17's local notification interface. No Shortcuts or extra helper application is required.
 - Preserves HDMI hardware-button overrides by leaving DisplayLink brightness alone on reconnect. DisplayLink does not report these changes live; automatic restoration of those overrides is limited to the panel's own memory.
-- Adds local brightness preferences, installer backups, status diagnostics, and regression coverage for sync, reconnect, restart, manual overrides, ambiguous identities, and failed reads.
+- Adds local brightness preferences, installer backups, status diagnostics, and regression coverage for sync, reconnect, restart, manual overrides, ambiguous identities, and failed reads. Status refreshes cannot postpone automatic override capture.
+- Starts DisplayLink changes before waiting for native readback, allowing both transports to update together instead of making HDMI wait for native verification.
 
 ## 1.2.1 — 2026-10-19
 
