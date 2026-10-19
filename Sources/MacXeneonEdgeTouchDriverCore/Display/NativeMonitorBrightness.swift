@@ -17,6 +17,7 @@ final class NativeMonitorBrightness {
     private typealias GetBrightness = @convention(c) (UInt32, UnsafeMutablePointer<Float>) -> Int32
     private let kit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY)
     private let displayServices = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_LAZY)
+    private var maximumByConnection: [String: UInt16] = [:]
     private var create: Create? { symbol("IOAVServiceCreateWithService", in: kit, as: Create.self) }
     private var read: Transfer? { symbol("IOAVServiceReadI2C", in: kit, as: Transfer.self) }
     private var write: Transfer? { symbol("IOAVServiceWriteI2C", in: kit, as: Transfer.self) }
@@ -64,7 +65,10 @@ final class NativeMonitorBrightness {
         }
         // Identical panels with no distinguishing EDID must not be guessed.
         let groups = Dictionary(grouping: result, by: \.identity)
-        return result.filter { groups[$0.identity]?.count == 1 }
+        let unique = result.filter { groups[$0.identity]?.count == 1 }
+        let online = Set(unique.map(\.connection))
+        maximumByConnection = maximumByConnection.filter { online.contains($0.key) }
+        return unique
     }
 
     func level(_ endpoint: Endpoint) -> Double? {
@@ -73,17 +77,23 @@ final class NativeMonitorBrightness {
     }
 
     func set(_ endpoint: Endpoint, level: Double) -> Bool {
-        guard level.isFinite, (0...1).contains(level), let write, let previous = reading(endpoint) else { return false }
-        let value = UInt16((level * Double(previous.maximum)).rounded())
+        // The range is stable for this live IORegistry connection and was read
+        // during discovery/polling. Avoid a 70 ms DDC query before every write.
+        // A new connection or failed read must establish a valid range again.
+        guard level.isFinite, (0...1).contains(level), let write,
+              let maximum = maximumByConnection[endpoint.connection] ?? reading(endpoint)?.maximum else { return false }
+        let value = UInt16((level * Double(maximum)).rounded())
         var packet = MonitorBrightnessDDC.set(value)
         let code = packet.withUnsafeMutableBytes { write(endpoint.service, 0x37, 0x51, $0.baseAddress!, UInt32($0.count)) }
         guard code == 0 else { return false }
         usleep(100_000)
         guard let actual = reading(endpoint) else { return false }
-        return actual.maximum == previous.maximum && actual.current == value
+        return actual.maximum == maximum && actual.current == value
     }
 
     private func reading(_ endpoint: Endpoint) -> (current: UInt16, maximum: UInt16)? {
+        var validRead = false
+        defer { if !validRead { maximumByConnection.removeValue(forKey: endpoint.connection) } }
         guard let read, let write else { return nil }
         var query = MonitorBrightnessDDC.query
         for _ in 0..<2 {
@@ -94,7 +104,10 @@ final class NativeMonitorBrightness {
         usleep(50_000)
         var reply = [UInt8](repeating: 0, count: 11)
         let code = reply.withUnsafeMutableBytes { read(endpoint.service, 0x37, 0, $0.baseAddress!, UInt32($0.count)) }
-        return code == 0 ? MonitorBrightnessDDC.reading(reply) : nil
+        guard code == 0, let value = MonitorBrightnessDDC.reading(reply) else { return nil }
+        maximumByConnection[endpoint.connection] = value.maximum
+        validRead = true
+        return value
     }
 
     private func eachService(_ kind: String, visit: (io_service_t) -> Void) {
