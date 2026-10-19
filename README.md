@@ -14,6 +14,7 @@ Use compatible WCH touchscreens on your Mac, including multiple monitors in port
 - Adds right-click, scrolling, dragging, and adjustable gesture timing.
 - Remembers external monitor rotation, resolution, arrangement, and app window positions.
 - Restores matching windows after login, once macOS or the app reopens them.
+- Optionally follows MacBook brightness and remembers supported monitors' brightness.
 
 This is a free community project for compatible **wch.cn `27C0:0859`** controllers. Check the [tested hardware and limitations](docs/compatibility.md) first. DisplayLink, when needed, handles video separately. Multi-finger gestures such as pinch-to-zoom are not currently supported.
 
@@ -49,6 +50,10 @@ Default holds are 0.3 seconds for dragging and 0.65 seconds for right-click. Ope
 Enable **Remember monitor layout and app windows**, then arrange your desktop with all screens attached. WCH learns changes automatically and restores the saved setup when those screens return.
 
 For restarts, leave **Reopen windows when logging back in** checked. WCH restores positions of matching windows; macOS and each app reopen them. See [desktop restoration](docs/desktop-restoration.md) for timing and limits, and [verification status](docs/compatibility.md#verification) for what has been tested.
+
+## Monitor brightness
+
+Choose **WCH → Monitor Brightness → Follow MacBook Brightness Changes** to adjust compatible external screens with the MacBook's brightness controls. Everything runs inside WCH. See [brightness setup and hardware limits](docs/brightness.md), including how physical monitor buttons interact with syncing.
 
 ## More information
 

@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 /// Small local preferences UI. Applying settings restarts the per-user LaunchAgent.
-final class DriverSettingsController: NSObject {
+final class DriverSettingsController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var window: NSWindow?
     private let hold = NSTextField(string: "")
@@ -13,12 +13,14 @@ final class DriverSettingsController: NSObject {
     private let remember = NSButton(checkboxWithTitle: "Remember screens with this USB connection", target: nil, action: nil)
     private let restoreFocus = NSButton(checkboxWithTitle: "Return focus to the previously active window", target: nil, action: nil)
     private let desktop = NSButton(checkboxWithTitle: "Remember monitor layout and app windows", target: nil, action: nil)
+    private var followBrightnessItem: NSMenuItem?
 
     override init() {
         super.init()
         item.button?.title = "WCH"
         item.button?.toolTip = "WCH Touch Driver"
         let menu = NSMenu()
+        menu.delegate = self
         let settings = NSMenuItem(title: "Touch Settings…", action: #selector(showSettings), keyEquivalent: "")
         settings.target = self
         menu.addItem(settings)
@@ -34,10 +36,64 @@ final class DriverSettingsController: NSObject {
             menu.addItem(entry)
         }
         menu.addItem(.separator())
+        let brightnessMenu = NSMenu()
+        let brightness = NSMenuItem(title: "Monitor Brightness", action: nil, keyEquivalent: "")
+        brightness.submenu = brightnessMenu
+        for (title, action) in [("Follow MacBook Brightness Changes", #selector(toggleBrightnessFollow)),
+                                ("Match MacBook Brightness Now", #selector(syncBrightness)),
+                                ("Remember Current Brightness", #selector(rememberBrightness)),
+                                ("Brightness Status…", #selector(brightnessStatus)),
+                                ("Turn Off Brightness Control", #selector(disableBrightness))] {
+            let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            entry.target = self
+            if followBrightnessItem == nil { followBrightnessItem = entry }
+            brightnessMenu.addItem(entry)
+        }
+        menu.addItem(brightness)
+        menu.addItem(.separator())
         let pair = NSMenuItem(title: "Pair Screens Again…", action: #selector(repair), keyEquivalent: "")
         pair.target = self
         menu.addItem(pair)
         item.menu = menu
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        let data = try? Data(contentsOf: MonitorBrightnessController.defaultURL())
+        let value = data.flatMap { try? JSONDecoder().decode(MonitorBrightnessPreferences.self, from: $0) }
+        followBrightnessItem?.state = value?.enabled == true && value?.followBuiltIn == true ? .on : .off
+    }
+
+    @objc private func toggleBrightnessFollow() {
+        brightnessCommand(followBrightnessItem?.state == .on ? "brightness-independent" : "follow-brightness", show: true)
+    }
+    @objc private func syncBrightness() { brightnessCommand("sync-brightness", show: true) }
+    @objc private func rememberBrightness() { brightnessCommand("remember-brightness", show: true) }
+    @objc private func brightnessStatus() { brightnessCommand("brightness-status", show: true) }
+    @objc private func disableBrightness() { brightnessCommand("brightness-off", show: true) }
+
+    private func brightnessCommand(_ command: String, show: Bool) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let message: String
+            do {
+                let reply = try DriverControl.request(command)
+                let value = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any] ?? [:]
+                let monitors = value["monitors"] as? [[String: Any]] ?? []
+                let lines = monitors.map { monitor -> String in
+                    let suffix = monitor["transport"] as? String == "displayLink" ? "last known" : "remembered"
+                    let detail = monitor["connected"] as? Bool == false ? "Disconnected" :
+                        monitor["restoreFailed"] as? Bool == true ? "Restore failed; saved level retained" :
+                        monitor["restoring"] as? Bool == true ? "Restoring saved level…" : monitor["lastWrite"] as? String ?? ""
+                    return "\(monitor["name"] ?? "Monitor"): \(monitor["rememberedPercent"] ?? 0)% \(suffix)\n\(detail)"
+                }.joined(separator: "\n")
+                message = (value["error"] as? String ?? value["status"] as? String ?? reply) + "\n\n" + lines +
+                    "\n\nWhen following is on, MacBook brightness changes update compatible monitors. Physical-button adjustments last until the next MacBook change. Supported native monitors remember those adjustments. DisplayLink cannot report button changes live, so those panels use their own memory on reconnect. Equal percentages may look different across panels."
+            } catch { message = error.localizedDescription }
+            DispatchQueue.main.async {
+                guard self != nil, show else { return }
+                let alert = NSAlert(); alert.messageText = "WCH Monitor Brightness"; alert.informativeText = message
+                NSApp.activate(ignoringOtherApps: true); alert.runModal()
+            }
+        }
     }
 
     @objc private func showSettings() {

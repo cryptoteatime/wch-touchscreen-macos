@@ -9,6 +9,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
     private let configuration: DriverConfiguration
     private var settingsController: DriverSettingsController?
     private var desktopLayoutController: DesktopLayoutController?
+    private var monitorBrightnessController: MonitorBrightnessController?
     private let displayResolver: DisplayResolver
     private let pairingStore: PairingStore
     private let pairingOverlay: PairingOverlayPresenting
@@ -132,6 +133,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
         }
         settingsController = DriverSettingsController()
         desktopLayoutController = DesktopLayoutController(configuration: configuration)
+        monitorBrightnessController = MonitorBrightnessController(configuration: configuration)
 
         // Keep coordinate captures out of the operational log so a storm cannot
         // crowd out several days of lifecycle/pairing evidence.
@@ -158,6 +160,10 @@ public final class MacXeneonEdgeTouchDriverApplication {
                     layout.request(command, reply: reply)
                     return
                 }
+                if ["brightness-status", "remember-brightness", "follow-brightness", "brightness-independent", "brightness-off", "sync-brightness", "restore-brightness"].contains(command), let brightness = self.monitorBrightnessController {
+                    brightness.request(command, reply: reply)
+                    return
+                }
                 self.gestureQueue.async { reply(self.handleControlCommand(command)) }
             }
             try hidMonitor.start()
@@ -170,6 +176,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
         scheduleDisplayReconciliation(reason: "startup", delay: .milliseconds(500))
         startObservation()
         desktopLayoutController?.start()
+        monitorBrightnessController?.start()
 
         isApplicationEventLoopRunning = true
         NSApp.run()
@@ -181,6 +188,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
         guard isRunning else { return }
         isRunning = false
         desktopLayoutController?.stop()
+        monitorBrightnessController?.stop()
         observationGate.stop()
         hidMonitor.stop()
         control.stop()

@@ -36,6 +36,7 @@ New portable-profile installs enable connection memory. Other configurations can
 | Save Current Desktop Layout | Accept the current connected arrangement |
 | Restore Saved Desktop Layout | Retry the remembered arrangement |
 | Desktop Layout Status | Inspect saved displays and restoration results |
+| Monitor Brightness | Follow MacBook brightness or remember independent levels; see [brightness](brightness.md) |
 
 **Apply & Restart Touch Driver** saves preferences and restarts WCH. It does not restart the Mac.
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0 — 2026-10-19
+
+- Adds optional monitor brightness control to the WCH menu, including following MacBook brightness changes and remembering independent native monitor levels.
+- Restores supported native Apple Silicon monitors through DDC/CI with bounded retries and hardware readback. Stable physical-button changes are remembered; startup defaults cannot overwrite saved targets.
+- Controls compatible DisplayLink monitors directly through Manager 17's local notification interface. No Shortcuts or extra helper application is required.
+- Preserves HDMI hardware-button overrides by leaving DisplayLink brightness alone on reconnect. DisplayLink does not report these changes live; automatic restoration of those overrides is limited to the panel's own memory.
+- Adds local brightness preferences, installer backups, status diagnostics, and regression coverage for sync, reconnect, restart, manual overrides, ambiguous identities, and failed reads.
+
 ## 1.2.1 — 2026-10-19
 
 - Protects the saved monitor arrangement for the first minute after driver startup and for thirty seconds after monitor reconnect/wake. Late display mode or origin changes during that period trigger restoration instead of being learned as the new layout.

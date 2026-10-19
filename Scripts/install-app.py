@@ -55,7 +55,7 @@ for directory in (support, logs, agent.parent):
     directory.mkdir(parents=True, exist_ok=True)
 backup = support / "backups" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
 backup.mkdir(parents=True, mode=0o700)
-for name in ("config.json", "pairings.json", "desktop-layout.json", "window-identity-salt"):
+for name in ("config.json", "pairings.json", "desktop-layout.json", "window-identity-salt", "brightness.json"):
     if (support / name).exists():
         shutil.copy2(support / name, backup / name)
 if previous_agent:
