@@ -4,7 +4,7 @@
 
 An independent open-source macOS user-space touch driver for the [CORSAIR XENEON EDGE](https://www.corsair.com/us/en/p/monitors/cc-9011306-ww/xeneon-edge-14-5-lcd-touchscreen-cc-9011306-ww) and compatible screens that expose the `wch.cn TouchScreen` controller as USB `27C0:0859`. It supports multiple identical touchscreens, safe per-controller display mapping, taps, direct pixel scrolling, hold-to-drag, double-clicking, focus restoration, hotplug recovery, and containment of incoherent controller report storms.
 
-[![A real Mac desk setup with two WCH touchscreen displays below an ultrawide monitor](Assets/xeneon-wch-touchscreen-desk-setup.jpg)](https://nocreativity.com/blog/how-openai-codex-turned-a-hardware-problem-into-a-pr)
+[![A real Mac desk setup with two WCH touchscreen displays below an ultrawide monitor](../Assets/xeneon-wch-touchscreen-desk-setup.jpg)](https://nocreativity.com/blog/how-openai-codex-turned-a-hardware-problem-into-a-pr)
 
 Input capture, pairing UI, display resolution, event injection, accessibility-based focus restoration, and hotplug observation use documented macOS frameworks directly.
 
@@ -55,7 +55,7 @@ If the driver works for your setup, please star the repository and submit a comp
 The easiest installation path is to give this repository to a local coding
 agent such as Codex, Claude Code, Cursor, or another AI tool with filesystem and
 terminal access. Ask it to follow the repository's [AI installation
-runbook](llm.txt). The runbook gives the agent the exact installation,
+runbook](https://github.com/mrnocreativity/xeneon-wch-touchscreen-driver-macos/blob/707106e828d178db004a7ec1b3d8eee9447b03b9/llm.txt). The runbook gives the agent the exact installation,
 permission, physical pairing, verification, troubleshooting, and uninstall
 contract.
 
@@ -233,9 +233,9 @@ One GCD timer per affected controller checks raw silence once per second while n
 
 Diagnostics retain a 256-entry coordinate/decision ring and a bounded frozen pre/post-trigger capture. At most one capture per controller per 30 seconds is encoded off the input queue and written through bounded asynchronous logging to `<fileLogPath>.storms`, with a maximum 1 MiB current file and one rotated backup. Operational summaries remain in the main log so coordinate captures cannot displace multi-day lifecycle history. `Storm capture v1` records parsed down/move/up coordinates, monotonic timestamps, filter decisions, emitted-event counts and cancellations; `raw_idle` records have no coordinates, and `timer` records denote delayed decisions. These are local diagnostic samples, not complete USB packet recordings. Redact captures before sharing publicly. Status additionally exposes `stormRecoveryProbation` and `filterDecision`.
 
-Storm-mode thresholds are conservative initial defaults verified with synthetic regression traces, not calibrated against complete recordings of the September incidents. Coherent controller-generated noise can still be indistinguishable from a real finger. Physical storm testing is required to measure false gestures, missed touches and latency. See [Selective Storm Filtering](docs/plans/2026-09-14-selective-storm-filtering-design.md) for the current design and verification scope.
+Storm-mode thresholds are conservative initial defaults verified with synthetic regression traces, not calibrated against complete recordings of the September incidents. Coherent controller-generated noise can still be indistinguishable from a real finger. Physical storm testing is required to measure false gestures, missed touches and latency. See [Selective Storm Filtering](plans/2026-09-14-selective-storm-filtering-design.md) for the current design and verification scope.
 
-This protection was added after a panel controller was captured emitting a raw HID touch storm while the production driver was stopped. The reports contained genuine touch bits but rapidly changing coordinates at the controller's report rate, so they originated upstream of synthetic event generation and could not be distinguished by checking the button byte alone. See [Touch Storm Protection Design](docs/plans/2026-09-01-touch-storm-protection-design.md) for the captured evidence and [Active Storm Confidence Tracking Design](docs/plans/2026-09-02-active-storm-confidence-tracking-design.md) for the earlier confidence-tracking design.
+This protection was added after a panel controller was captured emitting a raw HID touch storm while the production driver was stopped. The reports contained genuine touch bits but rapidly changing coordinates at the controller's report rate, so they originated upstream of synthetic event generation and could not be distinguished by checking the button byte alone. See [Touch Storm Protection Design](plans/2026-09-01-touch-storm-protection-design.md) for the captured evidence and [Active Storm Confidence Tracking Design](plans/2026-09-02-active-storm-confidence-tracking-design.md) for the earlier confidence-tracking design.
 
 The driver keeps focus on the touched application while a second tap remains possible. After a single- or double-click sequence, it restores the previously focused application and exact window through AppKit and Accessibility—without generating another mouse click on the original display.
 
@@ -249,7 +249,7 @@ This implementation was informed by the public macOS touchscreen work and hardwa
 - [Myseri/xeneon-edge-multitouch-macos](https://github.com/Myseri/xeneon-edge-multitouch-macos) for its hardware-verified USB/HID investigation and evidence explaining the controller's single-touch behavior on macOS.
 - [talesmousinho/m14t-touch-macos](https://github.com/talesmousinho/m14t-touch-macos) as a reference for keeping HID input, display resolution, coordinate mapping, and synthetic events behind small native Swift boundaries.
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for authorship, license links, and the specific role of each reference.
+See [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for authorship, license links, and the specific role of each reference.
 
 ## Known Caveats
 

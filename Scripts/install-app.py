@@ -9,7 +9,18 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from build_support import ROOT
+
+def bootstrap_agent(domain, agent):
+    # bootout can acknowledge before launchd finishes removing the old job.
+    for attempt in range(5):
+        result = subprocess.run(["launchctl", "bootstrap", domain, str(agent)], capture_output=True, text=True)
+        if result.returncode == 0:
+            return
+        if attempt == 4:
+            raise subprocess.CalledProcessError(result.returncode, result.args, output=result.stdout, stderr=result.stderr)
+        time.sleep(1)
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--profile", choices=["portable-dual-wch", "xeneon"], default="xeneon")
@@ -73,7 +84,7 @@ with tempfile.TemporaryDirectory(prefix=".wch-install-", dir=app_dir) as scratch
         temporary_agent.replace(agent)
         if not args.no_start:
             subprocess.run(["launchctl", "enable", domain + "/" + label], check=True)
-            subprocess.run(["launchctl", "bootstrap", domain, str(agent)], check=True)
+            bootstrap_agent(domain, agent)
     except Exception:
         subprocess.run(["launchctl", "bootout", domain + "/" + label], capture_output=True)
         if destination.exists():
@@ -82,7 +93,10 @@ with tempfile.TemporaryDirectory(prefix=".wch-install-", dir=app_dir) as scratch
             old.rename(destination)
         if previous_agent:
             agent.write_bytes(previous_agent)
-            subprocess.run(["launchctl", "bootstrap", domain, str(agent)], capture_output=True)
+            try:
+                bootstrap_agent(domain, agent)
+            except subprocess.CalledProcessError:
+                print("Previous files restored; restart its LaunchAgent after launchd settles. Backup:", backup, file=sys.stderr)
         elif agent.exists():
             agent.unlink()
         raise
