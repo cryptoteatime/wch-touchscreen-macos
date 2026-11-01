@@ -34,6 +34,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
     )
 
     private var connectedDevices: Set<TouchDeviceIdentity> = []
+    private var brightnessAwaitingTouch: Set<TouchDeviceIdentity> = []
     private var suppressedUntilUp: Set<TouchDeviceIdentity> = []
     private var sessions: [TouchDeviceIdentity: DeviceTouchSession] = [:]
     private let stormDiagnosticQueue = BoundedDiagnosticQueue(capacity: 2)
@@ -164,7 +165,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
                     layout.request(command, reply: reply)
                     return
                 }
-                if ["brightness-status", "remember-brightness", "follow-brightness", "brightness-independent", "brightness-off", "sync-brightness", "restore-brightness"].contains(command), let brightness = self.monitorBrightnessController {
+                if (["brightness-status", "remember-brightness", "follow-brightness", "brightness-independent", "brightness-off", "sync-brightness", "restore-brightness"].contains(command) || MonitorBrightnessCommand.level(command) != nil), let brightness = self.monitorBrightnessController {
                     brightness.request(command, reply: reply)
                     return
                 }
@@ -270,14 +271,19 @@ public final class MacXeneonEdgeTouchDriverApplication {
             handleDeviceRemoval(old)
         }
         connectedDevices.insert(device)
+        brightnessAwaitingTouch.insert(device)
         ensureSession(for: device)
         scheduleDisplayReconciliation(reason: "HID device match at \(device.hexadecimalLocationID)")
     }
 
     func handleDeviceRemoval(_ device: TouchDeviceIdentity) {
+        if let display = pairingStore.resolveDisplay(for: device, connectedDevices: connectedDevices, displays: compatibleDisplays) {
+            monitorBrightnessController?.connectionInterrupted(displayID: display.displayID, reason: "Paired touch USB interface disconnected")
+        }
         if sessions[device]?.validator.isStormActive == true { logStormCapture(for: device, at: .now()) }
         suspendRouting(reason: "Controller disconnected")
         connectedDevices.remove(device)
+        brightnessAwaitingTouch.remove(device)
         authority.removeValue(forKey: device)
         suppressedUntilUp.remove(device)
         sessions[device]?.cancelStormRecoveryTimer()
@@ -520,6 +526,9 @@ public final class MacXeneonEdgeTouchDriverApplication {
             sessions[device]?.mapperStore.currentMapper = mapper
             if display != nil {
                 setAuthority(device, phase: .active, reason: "Verified association and current endpoints")
+                if let display, brightnessAwaitingTouch.remove(device) != nil {
+                    monitorBrightnessController?.connectionInterrupted(displayID: display.displayID, reason: "Paired touch USB interface is ready again")
+                }
             } else if calibrationPaused {
                 setAuthority(device, phase: .suspended, reason: "Calibration cancelled; use re-pair to resume")
             } else if challenge != nil {

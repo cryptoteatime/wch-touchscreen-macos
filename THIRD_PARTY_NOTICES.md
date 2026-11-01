@@ -16,7 +16,7 @@ The upstream copyright and MIT permission notice are retained in `LICENSE` and i
 
 ## Brightness research and licensing
 
-- [MonitorControl](https://github.com/MonitorControl/MonitorControl) informed the Apple Silicon IOAV/DDC declarations and protocol in `NativeMonitorBrightness.swift`. Its MIT notice is reproduced below and included in built app bundles through this file.
+- [MonitorControl](https://github.com/MonitorControl/MonitorControl) informed the Apple Silicon IOAV/DDC declarations and the Intel framebuffer I2C protocol in `NativeMonitorBrightness.swift` and `IntelMonitorBrightness.swift`. Its MIT notice is reproduced below and included in built app bundles through this file.
 - DisplayLink Manager remains a separately installed Synaptics product. WCH's optional bridge uses Manager 17's local distributed-notification messages, verified against the installed application. No DisplayLink code or binary is redistributed. This vendor interface may change; its acknowledgement does not make cached brightness a live hardware-button reading.
 - Reading the built-in display uses the optional private `DisplayServicesGetBrightness` symbol, which may change across macOS versions.
 

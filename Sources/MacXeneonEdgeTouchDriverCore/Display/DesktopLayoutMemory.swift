@@ -48,9 +48,9 @@ struct DesktopLayout: Codable, Equatable {
     var windows: [DesktopWindow]
 
     var isValid: Bool {
-        version == 1 && screens.count >= 2 && screens.count <= 16 &&
+        version == 1 && screens.count >= 1 && screens.count <= 16 &&
         Set(screens.map(\.uuid)).count == screens.count &&
-        screens.filter(\.builtIn).count == 1 &&
+        screens.filter(\.builtIn).count <= 1 && screens.contains(where: { !$0.builtIn }) &&
         screens.allSatisfy { !$0.uuid.isEmpty && [0,90,180,270].contains($0.rotation) &&
             validFrame($0.frame) && $0.width > 0 && $0.height > 0 && $0.width <= 16384 && $0.height <= 16384 &&
             $0.pixelWidth > 0 && $0.pixelHeight > 0 && $0.pixelWidth <= 32768 && $0.pixelHeight <= 32768 &&

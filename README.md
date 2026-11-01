@@ -12,7 +12,7 @@ Use compatible WCH touchscreens on your Mac, including multiple monitors in port
 - Maps touch to the correct screen in landscape or portrait.
 - Remembers paired monitors when you reconnect through the same ports.
 - Adds right-click, scrolling, dragging, and adjustable gesture timing.
-- Remembers external monitor rotation, resolution, arrangement, and app window positions.
+- Remembers external monitor rotation, resolution, arrangement, and app window positions, with separate layouts for open and closed laptop setups.
 - Restores matching windows after login, once macOS or the app reopens them.
 - Optionally follows MacBook brightness and remembers supported monitors' brightness.
 - Configures touch and brightness separately for each monitor, including mixed models and connections.
@@ -54,7 +54,7 @@ For restarts, leave **Reopen windows when logging back in** checked. WCH restore
 
 ## Monitor brightness
 
-Choose **WCH → Monitor Brightness → Follow MacBook Brightness Changes** to adjust compatible external screens with the MacBook's brightness controls. [Monitor profiles](docs/monitor-profiles.md) let each screen follow the global setting, follow independently, or retain its own level. Automatic connection selection prefers native DDC/CI and uses DisplayLink for screens that need it. See [brightness setup and hardware limits](docs/brightness.md).
+Choose **WCH → Monitor Brightness → Follow MacBook Brightness Changes** to adjust compatible external screens with the MacBook's brightness controls. [Monitor profiles](docs/monitor-profiles.md) let each screen follow the global setting, follow independently, or retain its own level. Automatic connection selection prefers native DDC/CI and uses DisplayLink for screens that need it. Without an active built-in screen, **Set Monitor Brightness…** adjusts and remembers external levels. See [brightness setup and hardware limits](docs/brightness.md).
 
 ## More information
 

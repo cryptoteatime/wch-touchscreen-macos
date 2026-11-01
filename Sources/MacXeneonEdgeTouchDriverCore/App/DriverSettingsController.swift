@@ -45,6 +45,8 @@ final class DriverSettingsController: NSObject, NSMenuDelegate {
         for (title, action) in [("Follow MacBook Brightness Changes", #selector(toggleBrightnessFollow)),
                                 ("Match MacBook Brightness Now", #selector(syncBrightness)),
                                 ("Remember Current Brightness", #selector(rememberBrightness)),
+                                ("Set Monitor Brightness…", #selector(setMonitorBrightness)),
+                                ("Restore Saved Brightness", #selector(restoreBrightness)),
                                 ("Brightness Status…", #selector(brightnessStatus)),
                                 ("Turn Off Brightness Control", #selector(disableBrightness))] {
             let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -75,10 +77,31 @@ final class DriverSettingsController: NSObject, NSMenuDelegate {
     @objc private func rememberBrightness() { brightnessCommand("remember-brightness", show: true) }
     @objc private func brightnessStatus() { brightnessCommand("brightness-status", show: true) }
     @objc private func disableBrightness() { brightnessCommand("brightness-off", show: true) }
+    @objc private func restoreBrightness() { brightnessCommand("restore-brightness", show: true) }
+
+    @objc private func setMonitorBrightness() {
+        let alert = NSAlert()
+        alert.messageText = "Set Monitor Brightness"
+        alert.informativeText = "Choose a brightness level for the monitors selected in Monitor Profiles. This also works with the laptop lid closed."
+        alert.addButton(withTitle: "Set Brightness"); alert.addButton(withTitle: "Cancel")
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 64))
+        let slider = NSSlider(value: 85, minValue: 0, maxValue: 100, target: self, action: #selector(brightnessSliderChanged(_:)))
+        slider.frame = NSRect(x: 0, y: 24, width: 300, height: 24)
+        slider.isContinuous = true
+        let label = NSTextField(labelWithString: "85%")
+        label.tag = 1301; label.alignment = .center; label.frame = NSRect(x: 0, y: 0, width: 300, height: 20)
+        view.addSubview(slider); view.addSubview(label); alert.accessoryView = view
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn { brightnessCommand("set-brightness:\(Int(slider.doubleValue.rounded()))", show: false) }
+    }
+    @objc private func brightnessSliderChanged(_ slider: NSSlider) {
+        (slider.superview?.viewWithTag(1301) as? NSTextField)?.stringValue = "\(Int(slider.doubleValue.rounded()))%"
+    }
 
     private func brightnessCommand(_ command: String, show: Bool) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let message: String
+            let needsAlert: Bool
             do {
                 let reply = try DriverControl.request(command)
                 let value = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any] ?? [:]
@@ -91,12 +114,17 @@ final class DriverSettingsController: NSObject, NSMenuDelegate {
                     let behavior = monitor["followsMacBook"] as? Bool == true ? "following MacBook" : "independent"
                     return "\(monitor["name"] ?? "Monitor"): \(monitor["rememberedPercent"] ?? 0)% \(suffix), \(behavior)\n\(detail)"
                 }.joined(separator: "\n")
-                message = (value["error"] as? String ?? value["status"] as? String ?? reply) + "\n\n" + lines +
+                let diagnostics = value["diagnostics"] as? [String: Any] ?? [:]
+                let counters = diagnostics["counts"] as? [String: Int] ?? [:]
+                let failures = (counters["write-failed"] ?? 0) + (counters["acknowledgement-timeout"] ?? 0)
+                let recovery = "This session: \(counters["connection-change"] ?? 0) connection changes, \(failures) failed or unacknowledged writes."
+                message = (value["error"] as? String ?? value["status"] as? String ?? reply) + "\n\n" + lines + "\n\n" + recovery +
                     "\n\nMonitor Profiles controls which screens follow MacBook changes and which keep independent levels. Native monitors remember readable button adjustments. Equal percentages may look different across panels." +
                     ((value["displayLinkNote"] as? String).map { "\n\n" + $0 } ?? "")
-            } catch { message = error.localizedDescription }
+                needsAlert = show || value["error"] != nil
+            } catch { message = error.localizedDescription; needsAlert = true }
             DispatchQueue.main.async {
-                guard self != nil, show else { return }
+                guard self != nil, needsAlert else { return }
                 let alert = NSAlert(); alert.messageText = "WCH Monitor Brightness"; alert.informativeText = message
                 NSApp.activate(ignoringOtherApps: true); alert.runModal()
             }

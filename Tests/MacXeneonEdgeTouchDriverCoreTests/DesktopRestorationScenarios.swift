@@ -168,3 +168,66 @@ func exerciseDesktopLayoutReadiness(_ check: (Bool, String) -> Void) {
     capture.beginRecovery(at: 100)
     check(!capture.allowsCapture(saved: [], live: [], at: 101), "Fast reconnect readiness preserves the thirty-second snapshot guard")
 }
+
+func exerciseDesktopTopologies(_ check: (Bool, String) -> Void) throws {
+    func screen(_ id: UInt32, _ name: String, builtIn: Bool = false, x: CGFloat = 0) -> DesktopScreen {
+        DesktopScreen(uuid: name, vendor: 1, model: id, serial: id, builtIn: builtIn,
+                      frame: CGRect(x: x, y: 0, width: 1000, height: 1600), rotation: builtIn ? 0 : 90,
+                      width: 1000, height: 1600, pixelWidth: 1000, pixelHeight: 1600, refreshRate: 60, runtimeID: id)
+    }
+    let internalScreen = screen(1, "internal", builtIn: true)
+    let left = screen(2, "left", x: -1000), right = screen(3, "right", x: 1000)
+    let open = DesktopLayout(screens: [internalScreen, left, right], windows: [])
+    let closed = DesktopLayout(screens: [left, right], windows: [])
+    let single = DesktopLayout(screens: [left], windows: [])
+    check(open.isValid && closed.isValid && single.isValid, "Laptop, clamshell, desktop and single external layouts validate")
+    check(!DesktopLayout(screens: [internalScreen], windows: []).isValid, "A disconnected laptop-only snapshot is not an external desktop")
+    var library = try DesktopLayoutLibrary.load(JSONEncoder().encode(open))
+    check(library.layouts == [open], "Legacy layout migrates without changing saved screens or windows")
+    check(library.selection(for: closed.screens) == .new, "Closing the lid selects a distinct topology")
+    try library.remember(closed)
+    check(library.layouts.count == 2 && library.selection(for: open.screens) == .existing(0), "Open-lid snapshot survives learning a clamshell desktop")
+    check(library.selection(for: closed.screens) == .existing(1), "The remembered clamshell desktop is selected independently")
+    var sameModel = closed
+    sameModel.screens[1].model = left.model
+    let legacy = DesktopLayoutLibrary(layouts: [sameModel])
+    check(legacy.permitsLearning(sameModel.screens, profiles: nil, vendor: 1, model: left.model), "A complete legacy pair can learn an external-only desktop")
+    check(!legacy.permitsLearning([left], profiles: nil, vendor: 1, model: left.model), "A prolonged partial legacy disconnect cannot become a new layout")
+    check(DesktopLayoutLibrary().permitsLearning([left], profiles: nil, vendor: 1, model: left.model), "A new single-panel desktop can learn its first layout")
+    check(!library.permitsLearning(closed.screens, profiles: [], vendor: 1, model: 2), "An empty explicit profile selection cannot learn arbitrary monitors")
+    var configuredLeft = left; configuredLeft.uuid = "00000000-0000-0000-0000-000000000002"
+    var configuredRight = right; configuredRight.uuid = "00000000-0000-0000-0000-000000000003"
+    let profiles = [configuredLeft, configuredRight].map { screen in
+        MonitorProfile(displayUUID: screen.uuid, name: "Test", hardwareName: "Test", vendor: screen.vendor, model: screen.model,
+                       serial: screen.serial, touchEnabled: true, brightnessConnection: .automatic, brightnessBehavior: .global)
+    }
+    check(library.permitsLearning([configuredLeft, configuredRight], profiles: profiles, vendor: nil, model: nil), "Closed lid requires no internal display when all configured panels are present")
+    check(!library.permitsLearning([configuredLeft], profiles: profiles, vendor: nil, model: nil), "Missing a configured panel cannot be mistaken for closing the lid")
+    var adjusted = closed; adjusted.screens[0].frame.origin.x = -1200
+    try library.remember(adjusted)
+    check(library.layouts.count == 2 && library.layouts[0] == open && library.layouts[1] == adjusted, "Updating one topology leaves the other untouched")
+    check(library.selection(for: [internalScreen, left]) == .new, "An incomplete connected set cannot match the complete saved desktop")
+    let roundTrip = try DesktopLayoutLibrary.load(JSONEncoder().encode(library))
+    check(roundTrip.layouts == library.layouts, "Both topology snapshots survive a new process")
+    var changedID = closed.screens
+    changedID[0].runtimeID = 42; changedID[1].runtimeID = 43
+    check(library.selection(for: changedID) == .existing(1), "Recreated runtime IDs do not change topology selection")
+    changedID[0].uuid = "recreated-left"; changedID[1].uuid = "recreated-right"
+    check(library.selection(for: changedID) == .existing(1), "Unique hardware fallback restores a topology after UUID changes")
+    var clone = closed; clone.screens[0].uuid = "another-left"; clone.screens[1].uuid = "another-right"
+    let ambiguous = DesktopLayoutLibrary(layouts: [closed, clone])
+    check(ambiguous.selection(for: changedID) == .ambiguous, "Multiple hardware-equivalent saved sets are never guessed")
+    check(ambiguous.selection(for: closed.screens) == .existing(0), "An exact full set takes priority over hardware fallback")
+    check(closed.targetOrigin(for: left, matches: [left.uuid: left, right.uuid: right]) == left.frame.origin,
+          "External-only layouts restore their own saved coordinate system")
+    var full = DesktopLayoutLibrary()
+    for id in UInt32(10)..<18 { try full.remember(DesktopLayout(screens: [screen(id, "monitor-\(id)")], windows: [])) }
+    do { try full.remember(single); check(false, "Full libraries must not evict an existing layout") }
+    catch { check(full.layouts.count == 8, "A full library retains all existing layouts") }
+    var invalid = open; invalid.screens[1].rotation = 45
+    do { _ = try DesktopLayoutLibrary.load(JSONEncoder().encode(invalid)); check(false, "Malformed legacy geometry is rejected") }
+    catch { check(true, "Malformed legacy geometry is rejected") }
+    var guardState = DesktopLayoutCaptureGuard(now: 0)
+    guardState.beginRecovery(at: 90)
+    check(guardState.isRecovering(at: 119) && !guardState.isRecovering(at: 120), "A new topology retains the reconnect capture settling guard")
+}

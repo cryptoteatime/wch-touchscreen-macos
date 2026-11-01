@@ -12,7 +12,7 @@ python3 Scripts/test-regressions.py
 python3 Scripts/build-app.py
 ```
 
-[GitHub Actions](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/workflows/verify.yml) runs the Swift package suite, standalone regressions, and an app build/signature check. The standalone suite covers connection persistence, gestures, display layout policy, reboot window matching, and private fingerprints.
+[GitHub Actions](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/workflows/verify.yml) runs the Swift package suite, standalone regressions, and an app build/signature check on macOS 15 and 26, for both Apple Silicon and Intel. The standalone suite covers connection persistence, gestures, display layout policy, reboot window matching, and private fingerprints.
 
 The direct compiler build can be used when the local SwiftPM runtime is broken. If Apple's selected compiler and SDK are incompatible, set `WCH_SDK_PATH` to a compatible **already installed** SDK. The project does not download or modify toolchains.
 

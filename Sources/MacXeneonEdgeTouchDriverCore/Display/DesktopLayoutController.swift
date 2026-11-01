@@ -26,6 +26,7 @@ final class DesktopLayoutController {
     private let profiles: [MonitorProfile]?
     private let url: URL
     private var layout: DesktopLayout?
+    private var library = DesktopLayoutLibrary()
     private var policy: DesktopLayoutPolicy
     private var loadError: String?
     private var status = "Starting desktop layout memory"
@@ -47,10 +48,9 @@ final class DesktopLayoutController {
             do {
                 let data = try Data(contentsOf: url)
                 guard data.count < 2_000_000 else { throw CocoaError(.fileReadCorruptFile) }
-                let value = try JSONDecoder().decode(DesktopLayout.self, from: data)
-                guard value.isValid else { throw CocoaError(.fileReadCorruptFile) }
-                layout = value
-                loadedWindowCount = value.windows.count
+                library = try DesktopLayoutLibrary.load(data)
+                layout = library.layouts.first
+                loadedWindowCount = layout?.windows.count ?? 0
                 savedAt = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
             } catch { loadError = "Saved layout could not be read; use Save Current Desktop Layout to replace it." }
         }
@@ -173,7 +173,7 @@ final class DesktopLayoutController {
                         self.loadError = nil
                         if self.capture(screens, revision: revision, explicit: true) { self.policy.restored(); self.restorePasses = 0; self.windowProgress = DesktopWindowRestoreProgress() }
                         else { error = "The displays changed during capture; try again when they have settled." }
-                    } else { error = "Connect both touchscreens before saving the desktop layout." }
+                    } else { error = "Connect all configured monitors in extended mode before saving the desktop layout." }
                 } else { error = "Wait a few seconds for the displays to settle, then save again." }
             } else if command == "restore-layout" {
                 if self.layout != nil {
@@ -192,17 +192,8 @@ final class DesktopLayoutController {
     }
 
     private func canLearn(_ screens: [DesktopScreen]) -> Bool {
-        if let profiles {
-            let selected = profiles.filter { $0.touchEnabled || $0.brightnessConnection != .off }
-            let snapshots = screens.map { DisplaySnapshot(displayID: $0.runtimeID, vendorNumber: $0.vendor, modelNumber: $0.model,
-                serialNumber: $0.serial, bounds: $0.frame, pixelsWide: $0.pixelWidth, pixelsHigh: $0.pixelHeight,
-                rotationDegrees: $0.rotation, uuid: $0.uuid, builtIn: $0.builtIn) }
-            let resolved = MonitorProfileRouting.resolved(profiles, displays: snapshots)
-            return screens.filter(\.builtIn).count == 1 && !selected.isEmpty && selected.allSatisfy { resolved[$0.displayUUID] != nil } &&
-                screens.allSatisfy { CGDisplayMirrorsDisplay($0.runtimeID) == kCGNullDirectDisplay }
-        }
-        return screens.contains(where: \.builtIn) && screens.filter { !$0.builtIn && $0.vendor == vendor && $0.model == model }.count >= 2 &&
-        screens.allSatisfy { CGDisplayMirrorsDisplay($0.runtimeID) == kCGNullDirectDisplay }
+        library.permitsLearning(screens, profiles: profiles, vendor: vendor, model: model) &&
+            screens.allSatisfy { CGDisplayMirrorsDisplay($0.runtimeID) == kCGNullDirectDisplay }
     }
 
     private func tick() {
@@ -220,6 +211,31 @@ final class DesktopLayoutController {
             return
         }
         let revision = signal.revision
+        // Only select/learn a different topology when every configured external
+        // monitor is present. A dropped cable must not become a clamshell profile.
+        switch library.selection(for: screens) {
+        case .existing(let index):
+            let selected = library.layouts[index]
+            if layout != selected {
+                guard library.permitsLearning(screens, profiles: profiles, vendor: vendor, model: model) else {
+                    status = "Saved layouts retained; waiting for all configured monitors"
+                    return
+                }
+                layout = selected; policy = DesktopLayoutPolicy(hasSavedLayout: true)
+                restorePasses = 0; windowProgress = DesktopWindowRestoreProgress()
+                pacing = DesktopLayoutAttemptPacing(); captureGuard.beginRecovery(at: now)
+                log("Selected saved layout for \(screens.count) active displays.")
+            }
+        case .new:
+            if canLearn(screens), layout != nil {
+                layout = nil; policy = DesktopLayoutPolicy(hasSavedLayout: false)
+                restorePasses = 0; windowProgress = DesktopWindowRestoreProgress()
+                pacing = DesktopLayoutAttemptPacing(); captureGuard.beginRecovery(at: now)
+            }
+        case .ambiguous:
+            status = "More than one saved layout matches; saved desktops retained"
+            return
+        }
         let matches = layout?.matches(screens)
         let action = policy.action(hasLayout: layout != nil, completeMatch: matches != nil, canLearn: canLearn(screens))
         switch action {
@@ -293,6 +309,14 @@ final class DesktopLayoutController {
         let next = DesktopLayout(screens: screens, windows: windows)
         guard next.isValid else { status = "Layout capture was invalid; previous snapshot retained"; return false }
         let now = ProcessInfo.processInfo.systemUptime
+        if !explicit, layout == nil, !library.layouts.isEmpty, captureGuard.isRecovering(at: now) {
+            status = "Waiting for the new monitor setup to settle before remembering it"
+            return false
+        }
+        if !explicit, layout == nil, windows.isEmpty, library.layouts.contains(where: { !$0.windows.isEmpty }) {
+            status = "Waiting for app windows before remembering the new monitor setup"
+            return false
+        }
         if !explicit, let layout,
            !captureGuard.allowsCapture(saved: layout.windows, live: windows, at: now) {
             status = captureGuard.isRecovering(at: now)
@@ -305,7 +329,10 @@ final class DesktopLayoutController {
             status = "Remembering \(screens.count) displays and \(windows.count) app windows"; return true
         }
         do {
-            let data = try JSONEncoder().encode(next)
+            var nextLibrary = library
+            try nextLibrary.remember(next)
+            let data = try JSONEncoder().encode(nextLibrary)
+            guard data.count < 2_000_000 else { status = "Saved desktop library is full; existing layouts retained"; return false }
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             // Serialize the commit against the display callback's capture fence.
             signalLock.lock()
@@ -313,7 +340,7 @@ final class DesktopLayoutController {
             guard signals.isCurrent(revision) else { return false }
             try data.write(to: url, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-            layout = next; savedAt = Date()
+            library = nextLibrary; layout = next; savedAt = Date()
             if explicit { captureGuard.acceptExplicitSave(at: now) }
             status = "Remembering \(screens.count) displays and \(windows.count) app windows"
             return true
@@ -326,6 +353,8 @@ final class DesktopLayoutController {
             "lastWindowRestore": lastWindowResult, "accessibilityGranted": AXIsProcessTrusted(),
             "loadedWindowCount": loadedWindowCount, "captureProtected": captureGuard.isRecovering(at: ProcessInfo.processInfo.systemUptime),
             "pendingWindowRemovals": captureGuard.pendingRemovalCount]
+        object["savedLayoutCount"] = library.layouts.count
+        object["activeDisplayMode"] = platform.screens().contains(where: \.builtIn) ? "Built-in and external displays" : "External displays only"
         let formatter = ISO8601DateFormatter()
         if let savedAt { object["savedAt"] = formatter.string(from: savedAt) }
         if let lastRestoreAt { object["lastRestoreAt"] = formatter.string(from: lastRestoreAt) }

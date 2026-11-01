@@ -8,13 +8,21 @@ Enable **Remember monitor layout and app windows** in Touch Settings. The portab
 
 ## Reconnect
 
-With all saved screens connected, WCH samples the stable desktop about every two seconds. Moving windows or changing the arrangement updates the saved layout automatically. The snapshot is frozen while a saved display is missing.
+With all saved screens connected, WCH samples the stable desktop about every two seconds. Moving windows or changing the arrangement updates the saved layout automatically. The snapshot is frozen while a configured external display is missing.
 
 After driver startup, the saved layout is protected from automatic replacement for sixty seconds; reconnect and wake protect it for at least thirty seconds. If macOS applies a late display arrangement during this period, WCH restores the intended external geometry again. **Save Current Desktop Layout** accepts your chosen arrangement immediately if you want to override this settling period.
 
 When every saved screen returns, WCH checks promptly after display callbacks and confirms matching hardware and geometry readings over at least half a second. It waits for macOS to finish reconfiguration, restores screen geometry, confirms the resulting state, and then moves matching windows. The two-second timer remains a fallback. Repeated attempts against unchanged geometry retain their two-second spacing and existing retry limits. A short visible settling period is expected.
 
 App launches and quits do not restart the display settling clock. They still invalidate an in-flight snapshot, and automatic saving retains its three-second quiet period after either app or display changes. The longer startup/reconnect snapshot protections above also remain active while restoration proceeds.
+
+## Closed lid and external-only desktops
+
+WCH stores separate layouts for complete active monitor sets, including an open MacBook, the same MacBook with its lid closed, and a desktop Mac with external displays only. All configured external monitors must be present before a new layout is learned. An inactive built-in display is excluded. Up to eight layouts are retained; an ambiguous match or a full library preserves existing layouts. Existing single-layout files migrate automatically when a snapshot is next saved.
+
+Arrange the windows the first time you use a new complete setup. WCH learns it after the startup/reconnect protection period, or you can choose **Save Current Desktop Layout** immediately. Returning to a previously saved active set selects its own layout. A missing external monitor does not overwrite the saved arrangement. Empty automatic window readings cannot create a replacement for a populated setup.
+
+Closed-lid use still requires macOS to keep the Mac awake with its external displays. WCH does not override sleep behavior or increase the Mac's supported display count.
 
 ## Restart or log in
 
@@ -32,7 +40,7 @@ Fingerprints are private salted hashes stored locally. Readable titles, document
 
 ## Limits
 
-- Desktop memory requires a built-in display. Individual monitor profiles support one or more selected external displays; all profiles with touch or brightness enabled must be connected before learning a desktop. Legacy model-based configurations require at least two matching external screens.
+- Desktop memory requires at least one external display. All profiles with touch or brightness enabled must be connected before learning a desktop. A new legacy model-based configuration can learn one external screen; after a layout is saved, its known monitor count must be present before learning another. Mirrored displays are not learned.
 - The complete saved monitor set must be present. Stable display identifiers and a unique hardware fallback accommodate changed DisplayLink IDs; ambiguous or different sets are not guessed.
 - Multiple indistinguishable windows, minimized or full-screen windows, and windows that do not reopen within the waiting period are skipped.
 - Apps may enforce minimum window sizes or refuse Accessibility placement. Desktop Layout Status reports failures. WCH retains the snapshot after placement errors rather than learning the failed arrangement.

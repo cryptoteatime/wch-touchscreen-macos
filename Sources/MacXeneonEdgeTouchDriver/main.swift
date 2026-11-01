@@ -8,8 +8,8 @@ struct MacXeneonEdgeTouchDriverMain {
         let arguments = Array(CommandLine.arguments.dropFirst())
         if !arguments.isEmpty {
             guard arguments.count == 1,
-                  ["status", "show-monitor-profiles", "re-pair", "cancel-pairing", "layout-status", "save-layout", "restore-layout", "brightness-status", "remember-brightness", "follow-brightness", "brightness-independent", "brightness-off", "sync-brightness", "restore-brightness"].contains(arguments[0]) else {
-                print("Usage: MacXeneonEdgeTouchDriver [status | show-monitor-profiles | re-pair | cancel-pairing | layout-status | save-layout | restore-layout | brightness-status | remember-brightness | follow-brightness | brightness-independent | brightness-off | sync-brightness | restore-brightness]")
+                  (["status", "show-monitor-profiles", "re-pair", "cancel-pairing", "layout-status", "save-layout", "restore-layout", "brightness-status", "remember-brightness", "follow-brightness", "brightness-independent", "brightness-off", "sync-brightness", "restore-brightness"].contains(arguments[0]) || MonitorBrightnessCommand.level(arguments[0]) != nil) else {
+                print("Usage: MacXeneonEdgeTouchDriver [status | show-monitor-profiles | re-pair | cancel-pairing | layout-status | save-layout | restore-layout | brightness-status | remember-brightness | follow-brightness | brightness-independent | brightness-off | sync-brightness | restore-brightness | set-brightness:0..100]")
                 exit(arguments == ["--help"] ? EXIT_SUCCESS : EXIT_FAILURE)
             }
             do {

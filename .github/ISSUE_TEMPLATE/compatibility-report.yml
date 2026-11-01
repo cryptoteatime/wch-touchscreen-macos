@@ -73,11 +73,30 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: operating-mode
+    attributes:
+      label: Mac display mode
+      options:
+        - Laptop lid open
+        - Laptop lid closed
+        - Desktop Mac (external displays only)
+    validations:
+      required: false
+
+  - type: input
+    id: power
+    attributes:
+      label: Monitor power source
+      placeholder: Powered from Mac USB-C, separate charger, or powered dock
+    validations:
+      required: false
+
   - type: textarea
     id: results
     attributes:
       label: Results
-      description: Describe pairing, tapping, scrolling, hold-drag, double-click, reconnect, and reboot behavior for every connected panel.
+      description: Describe pairing, tapping, scrolling, hold-drag, double-click, reconnect, sleep/wake, brightness, and reboot behavior for every connected panel.
       placeholder: |
         Panels tested:
         Pairing:
@@ -86,6 +105,8 @@ body:
         Hold-drag:
         Double-click:
         Reconnect/reboot:
+        Sleep/wake:
+        Brightness changes and recovery:
     validations:
       required: true
 

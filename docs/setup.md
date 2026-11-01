@@ -62,6 +62,8 @@ git pull --ff-only
 
 The installer preserves your configuration and keeps recovery copies of the old app, startup entry, and local settings. Local builds are ad hoc signed unless you provide a Developer ID identity. macOS may require you to refresh the app's existing permissions after updating; using a stable signing identity helps preserve them. See [build and signing](../CONTRIBUTING.md#build-and-signing).
 
+Version 1.5 stores multiple desktop layouts in a version-two library. If downgrading to an older build, restore its matching `desktop-layout.json` from the installer backup as well as the app; older builds cannot read the new library. Keep the newer backup if you plan to return to it.
+
 ## Remove
 
 ```sh

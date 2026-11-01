@@ -16,7 +16,7 @@ The project targets macOS 13 or later and compatible **wch.cn TouchScreen USB `2
 | Driver | Fork versions 1.2–1.4 |
 | Brightness | Native Apple Silicon DDC/CI; DisplayLink Manager 17.0.24 |
 
-The marketed monitor model has not been independently verified. These shared product identifiers are more reliable than assuming an Amazon listing variant. Other panels, Intel Macs, and other macOS versions need hardware testing.
+The marketed monitor model has not been independently verified. These shared product identifiers are more reliable than assuming an Amazon listing variant. Other panels, Intel Macs, and other macOS versions need hardware testing. The Intel brightness backend is experimental and requires a unique framebuffer hardware match. Closed-lid and desktop-only layouts have automated scenario coverage; physical validation remains pending.
 
 The original Xeneon configuration remains available through `--profile xeneon`. Prior upstream reports are retained in the [historical upstream documentation](upstream-readme.md); they do not establish verification of this fork's new features on those products.
 
@@ -26,7 +26,8 @@ The original Xeneon configuration remains available through `--profile xeneon`. 
 - Physical unplug/reconnect testing in 1.4.0 retained both monitor profiles, restored the portrait display layout and both touch mappings, and returned nine open windows to their saved positions and sizes.
 - Simulated process/window identity changes restored saved placements. Automated scenarios cover delayed app startup, logout closures, transient missing windows, and late display geometry changes.
 - Full restart validation of the layout protection introduced in 1.2.1 remains pending. Automated checks cannot verify every application's macOS Resume behavior.
-- [macOS CI](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/workflows/verify.yml) runs the Swift package tests, standalone regression scenarios, and app build/signature verification.
+- New brightness scenarios cover rapid target changes, slow reads, independent monitor workers, stale completions, reused display IDs, disconnect/reconnect invalidation, bounded diagnostics, and operation without a built-in source. Desktop scenarios cover single-external, closed-lid, and separate topology snapshots.
+- [macOS CI](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/workflows/verify.yml) runs the Swift package tests, standalone regression scenarios, and app build/signature verification on macOS 15 and 26 for Apple Silicon and Intel. A passing VM job does not establish physical display compatibility.
 
 ### Brightness and monitor profiles
 

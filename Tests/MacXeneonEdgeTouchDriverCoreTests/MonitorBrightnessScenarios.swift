@@ -154,3 +154,96 @@ func exerciseMonitorBrightness(_ check: (Bool, String) -> Void) throws {
     check(disabled.step(samples(0.10), builtIn: 0.3, now: 60).isEmpty, "Disabled control never writes")
     check(disabled.stepDisplayLink(hdmi(), now: 100).isEmpty, "The fast path also respects disabled brightness control")
 }
+
+func exerciseBrightnessWork(_ check: (Bool, String) -> Void) {
+    var left = MonitorBrightnessWork(connection: "first")
+    left.requestRead()
+    let read = left.next(at: 0)!
+    left.requestWrite(0.3, at: 0.05)
+    left.requestWrite(0.6, at: 0.1)
+    left.requestWrite(1, at: 0.15)
+    check(left.next(at: 0.16) == nil, "A slow read does not allow overlapping native operations")
+    check(!left.complete(read), "A pre-adjustment read cannot overwrite the latest target")
+    let final = left.next(at: 0.2)!
+    check(final.level == 1 && final.queuedAt == 0.15, "Rapid changes coalesce to the latest unsent value")
+    check(left.complete(final), "The current connection and target accept verified readback")
+    check(left.next(at: 0.4) == nil, "Superseded intermediate levels are not replayed")
+    left.requestWrite(0.4, at: 1)
+    let old = left.next(at: 1)!
+    left.reconnect("second")
+    left.requestWrite(0.85, at: 1.1)
+    check(left.next(at: 1.2) == nil, "Reconnect waits for the old hardware operation to finish")
+    check(!left.complete(old), "A late completion from the old connection is discarded")
+    let replacement = left.next(at: 1.3)!
+    check(replacement.connection == "second" && replacement.level == 0.85, "Reconnected hardware receives only its newest target")
+    check(!left.complete(old), "A duplicate stale completion cannot clear the new in-flight operation")
+    check(left.complete(replacement), "The new operation remains valid after a stale duplicate")
+    var right = MonitorBrightnessWork(connection: "right")
+    left.requestRead(); _ = left.next(at: 2)
+    right.requestWrite(0.7, at: 2)
+    check(right.next(at: 2)?.level == 0.7, "A stalled native monitor does not block a second monitor")
+    var third = MonitorBrightnessWork(connection: "third")
+    third.requestWrite(0.9, at: 2)
+    check(third.next(at: 2)?.level == 0.9, "Three native monitors have independent work queues")
+    var invalid = MonitorBrightnessWork(connection: "invalid")
+    for value in [Double.nan, .infinity, -0.1, 1.1] { invalid.requestWrite(value, at: 0) }
+    check(invalid.next(at: 1) == nil, "Invalid hardware levels never create work")
+    var epochs = MonitorBrightnessConnections()
+    let before = epochs.token("reused", display: 10)
+    let other = epochs.token("other", display: 20)
+    epochs.interrupted(10)
+    check(epochs.token("reused", display: 10) != before, "Brief disconnect invalidates a reused display number")
+    check(epochs.token("other", display: 20) == other, "A reset is scoped to the affected display")
+    let second = epochs.token("reused", display: 10)
+    epochs.interrupted(10)
+    check(epochs.token("reused", display: 10) != second, "Repeated brownout-like events receive new generations")
+    for id in UInt32(100)..<170 { epochs.interrupted(id) }
+    check(epochs.token("reused", display: 10) != before, "Bounded generation history cannot revive an old zero-generation token")
+    let permit = MonitorBrightnessPermit("first")
+    check(permit.accepts("first"), "Worker permit starts on the authorized connection")
+    permit.update(nil)
+    check(!permit.accepts("first"), "Disabling control revokes queued writes")
+    permit.update("second")
+    check(!permit.accepts("first") && permit.accepts("second"), "Reconnection cannot reuse an old write permit")
+    for percent in [0, 1, 85, 100] {
+        check(MonitorBrightnessCommand.level("set-brightness:\(percent)") == Double(percent) / 100, "WCH brightness works without a built-in source")
+    }
+    for command in ["set-brightness:-1", "set-brightness:101", "set-brightness:nan", "set-brightness:0.5", "set-brightness: 85", "set-brightness:85\n", "other:85"] {
+        check(MonitorBrightnessCommand.level(command) == nil, "Malformed brightness commands are rejected")
+    }
+    var diagnostics = MonitorBrightnessDiagnostics()
+    for _ in 0..<100 { diagnostics.record("write-failed", transport: "native") }
+    check(diagnostics.events.count == 64 && diagnostics.counters["write-failed"] == 100, "Diagnostics retain bounded events with cumulative counts")
+
+    let native = MonitorBrightnessIdentity(transport: .native, key: "native:test", name: "Native", vendor: 1, model: 2)
+    let linked = MonitorBrightnessIdentity(transport: .displayLink, key: "displaylink:test", name: "Linked", vendor: 3, model: 4)
+    var policy = MonitorBrightnessPolicy(preferences: .init(enabled: true, followBuiltIn: true,
+        targets: [.init(identity: native, level: 0.85), .init(identity: linked, level: 0.85)]))
+    func samples(_ connection: String = "A") -> [MonitorBrightnessSample] {
+        [.init(identity: native, connection: connection, level: 0.85), .init(identity: linked, connection: connection, level: 0.85)]
+    }
+    _ = policy.step(samples(), builtIn: 1, now: 0)
+    _ = policy.stepDisplayLink(samples(), now: 0.5)
+    check(policy.acknowledge(linked, connection: "A", level: 0.85, requestedAt: 0.5, success: true), "Initial vendor acknowledgement is accepted")
+    policy.invalidate(linked)
+    check(!policy.acknowledge(linked, connection: "A", level: 0.85, requestedAt: 0.5, success: true), "A disconnect event revokes even an identical cached acknowledgement")
+    _ = policy.stepDisplayLink(samples(), now: 1)
+    check(policy.stepDisplayLink(samples(), now: 1.5).map(\.identity) == [linked], "An event seen between polls re-arms vendor restoration")
+    let local = policy.synchronize(0.7, samples: samples(), now: 2, trackSource: false)
+    check(local.count == 2 && policy.target(for: native) == 0.7, "Explicit external level updates both saved targets")
+    let unchangedMac = policy.step(samples(), builtIn: 1, now: 2.1)
+    check(!unchangedMac.contains { $0.level == 1 }, "An unchanged Mac source does not undo a WCH menu adjustment")
+    _ = policy.step(samples(), builtIn: nil, now: 3)
+    check(policy.target(for: native) == 0.7, "No active built-in display preserves saved external levels")
+    check(policy.step(samples(), builtIn: 0.5, now: 4).allSatisfy { $0.level == 0.5 }, "A later intentional Mac change resumes following")
+    var new = MonitorBrightnessPolicy(preferences: .init())
+    check(new.synchronize(0.85, samples: [.init(identity: native, connection: "new", level: nil)], now: 0).count == 1,
+          "Enabling follow can target a known monitor before its first hardware read returns")
+    var fresh = MonitorBrightnessPolicy(preferences: .init(enabled: true, targets: [.init(identity: native, level: 0.85)]))
+    for time in [0.0, 3, 6, 9, 12, 15] { _ = fresh.step([.init(identity: native, connection: "N", level: 0.85, observedAt: time)], builtIn: nil, now: time) }
+    _ = fresh.step([.init(identity: native, connection: "N", level: 0.7, observedAt: 16)], builtIn: nil, now: 16)
+    _ = fresh.step([.init(identity: native, connection: "N", level: 0.7, observedAt: 16)], builtIn: nil, now: 20)
+    check(fresh.target(for: native) == 0.85, "Re-reading a cached native sample cannot establish a manual override")
+    _ = fresh.step([.init(identity: native, connection: "N", level: 0.7, observedAt: 21)], builtIn: nil, now: 21)
+    check(fresh.target(for: native) == 0.7, "A second fresh hardware reading can confirm a manual override")
+}

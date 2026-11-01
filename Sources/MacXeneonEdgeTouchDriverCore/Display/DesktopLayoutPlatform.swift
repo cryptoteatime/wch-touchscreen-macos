@@ -23,7 +23,8 @@ final class DesktopLayoutPlatform {
         var ids = [UInt32](repeating: 0, count: Int(count))
         guard CGGetOnlineDisplayList(count, &ids, &count) == .success else { return [] }
         return ids.prefix(Int(count)).compactMap { id in
-            guard let mode = CGDisplayCopyDisplayMode(id), let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return nil }
+            guard CGDisplayIsActive(id) != 0, let mode = CGDisplayCopyDisplayMode(id),
+                  let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return nil }
             return DesktopScreen(uuid: CFUUIDCreateString(nil, uuid) as String,
                 vendor: CGDisplayVendorNumber(id), model: CGDisplayModelNumber(id), serial: CGDisplaySerialNumber(id),
                 builtIn: CGDisplayIsBuiltin(id) != 0, frame: CGDisplayBounds(id), rotation: Int(CGDisplayRotation(id).rounded()),

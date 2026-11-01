@@ -10,7 +10,7 @@ Optional brightness control reads the built-in display brightness, uses DDC/CI f
 
 ## Local data
 
-Runtime files live in `~/Library/Application Support/MacXeneonEdgeTouchDriver/`. The layout snapshot stores app identifiers, local process/window identifiers, and geometry. Optional window-identifier, document, and title fingerprints use HMAC-SHA256 with a random local salt stored separately. Readable titles, document URLs, and document contents are not saved in the snapshot. The snapshot and salt have owner-only file permissions.
+Runtime files live in `~/Library/Application Support/MacXeneonEdgeTouchDriver/`. The desktop library stores up to eight layouts for complete active display sets. Each layout stores app identifiers, local process/window identifiers, and geometry. Optional window-identifier, document, and title fingerprints use HMAC-SHA256 with a random local salt stored separately. Readable titles, document URLs, and document contents are not saved in the snapshot. The snapshot and salt have owner-only file permissions.
 
 Brightness preferences store monitor identifiers and remembered levels in `brightness.json`, also with owner-only permissions.
 

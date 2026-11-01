@@ -33,6 +33,7 @@ struct MonitorBrightnessSample {
     var identity: MonitorBrightnessIdentity
     var connection: String
     var level: Double?
+    var observedAt: TimeInterval? = nil
 }
 
 struct MonitorBrightnessWrite: Equatable {
@@ -55,6 +56,7 @@ struct MonitorBrightnessPolicy {
         var candidate: Double?
         var candidateAt: TimeInterval = 0
         var requestedAt: TimeInterval?
+        var lastObservation: TimeInterval?
     }
     var preferences: MonitorBrightnessPreferences
     private var connections: [MonitorBrightnessIdentity: Connection] = [:]
@@ -63,6 +65,7 @@ struct MonitorBrightnessPolicy {
     init(preferences: MonitorBrightnessPreferences) { self.preferences = preferences }
 
     mutating func resetConnections() { connections.removeAll(); sourceBaseline = nil }
+    mutating func invalidate(_ identity: MonitorBrightnessIdentity) { connections.removeValue(forKey: identity) }
 
     mutating func remember(_ samples: [MonitorBrightnessSample]) {
         for sample in unique(samples) {
@@ -75,11 +78,13 @@ struct MonitorBrightnessPolicy {
     }
 
     mutating func synchronize(_ level: Double, samples: [MonitorBrightnessSample], now: TimeInterval,
-                              including identities: Set<MonitorBrightnessIdentity>? = nil) -> [MonitorBrightnessWrite] {
+                              including identities: Set<MonitorBrightnessIdentity>? = nil,
+                              trackSource: Bool = true) -> [MonitorBrightnessWrite] {
         guard let level = valid(level) else { return [] }
         let samples = samples.filter { identities == nil || identities!.contains($0.identity) }
-        sourceBaseline = level
+        if trackSource { sourceBaseline = level }
         remember(samples)
+        for sample in unique(samples) where target(for: sample.identity) == nil { save(sample.identity, level) }
         // An intentional Mac adjustment also updates remembered disconnected screens.
         for index in preferences.targets.indices where identities == nil || identities!.contains(preferences.targets[index].identity) {
             preferences.targets[index].level = level
@@ -122,11 +127,13 @@ struct MonitorBrightnessPolicy {
             if state.token != sample.connection { state = Connection(token: sample.connection, began: now, nextAttempt: now + 3) }
             defer { connections[sample.identity] = state }
             guard !state.failed else { continue }
+            let fresh = sample.observedAt.map { state.lastObservation == nil || $0 > state.lastObservation! } ?? true
+            if fresh { state.lastObservation = sample.observedAt }
             if !state.ready {
                 guard now >= state.nextAttempt else { continue }
                 state.nextAttempt = now + 3
                 state.attempts += 1
-                if let actual = valid(sample.level), abs(actual - desired) < 0.006 {
+                if fresh, let actual = valid(sample.level), abs(actual - desired) < 0.006 {
                     if now - state.began >= 12 { state.ready = true; state.protectUntil = now + 2 }
                 } else if !writes.contains(where: { $0.identity == sample.identity }) {
                     writes.append(MonitorBrightnessWrite(identity: sample.identity, level: desired))
@@ -134,7 +141,7 @@ struct MonitorBrightnessPolicy {
                 if state.attempts >= 8 && !state.ready { state.failed = true }
                 continue
             }
-            guard now >= state.protectUntil, let actual = valid(sample.level) else { continue }
+            guard fresh, now >= state.protectUntil, let actual = valid(sample.level) else { continue }
             if abs(actual - desired) < 0.006 { state.candidate = nil; continue }
             if let candidate = state.candidate, abs(candidate - actual) < 0.005, now - state.candidateAt >= 1 {
                 save(sample.identity, actual); state.candidate = nil
