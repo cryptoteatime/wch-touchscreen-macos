@@ -2,6 +2,8 @@
 
 Use [Issues](https://github.com/cryptoteatime/wch-touchscreen-macos/issues/new/choose) for reproducible bugs and hardware reports, and pull requests for focused changes. Describe the user-visible behavior and how you checked it. Use [private security reporting](SECURITY.md#report-a-security-issue) for vulnerabilities.
 
+To add a monitor, follow the [monitor list's evidence guidelines](docs/monitors.md#add-a-model-or-update-a-result). Reports with unknown technical details are welcome; keep tested features, reports from earlier drivers, and untested controller matches clearly identified.
+
 Preserve the [MIT license](LICENSE), upstream history, and [author credits](THIRD_PARTY_NOTICES.md). The inherited bundle identifier remains `com.ajvwhite.MacXeneonEdgeTouchDriver` so upgrades replace the existing driver rather than creating a second owner of the HID device.
 
 ## Checks

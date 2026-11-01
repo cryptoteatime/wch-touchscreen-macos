@@ -5,7 +5,13 @@
 
 Use compatible WCH touchscreens on your Mac, including multiple monitors in portrait. Tap a screen to move the pointer there, scroll with one finger, and keep your monitor layout when reconnecting.
 
-[Latest release](https://github.com/cryptoteatime/wch-touchscreen-macos/releases/latest) · [Setup guide](docs/setup.md) · [Compatibility](docs/compatibility.md) · [Report a problem](https://github.com/cryptoteatime/wch-touchscreen-macos/issues/new/choose)
+[Latest release](https://github.com/cryptoteatime/wch-touchscreen-macos/releases/latest) · [Setup guide](docs/setup.md) · [Compatibility](docs/compatibility.md) · [Monitor list](docs/monitors.md) · [Report a problem](https://github.com/cryptoteatime/wch-touchscreen-macos/issues/new/choose)
+
+## Will it work with my monitor?
+
+WCH is a free community app for certain touchscreen monitors on macOS 13 or later. Start with the [monitor list](docs/monitors.md): it names products, links to reports, and explains what was actually tested. Support depends on the touch hardware inside the monitor, so a USB-C connection alone is not enough.
+
+Don't know your model? The [compatibility guide](docs/compatibility.md) walks you through checking it without Terminal. DisplayLink is only needed if your monitor requires it to show a picture. WCH currently supports one-finger gestures; pinch-to-zoom and other multi-finger gestures are unavailable.
 
 ## What it does
 
@@ -16,8 +22,6 @@ Use compatible WCH touchscreens on your Mac, including multiple monitors in port
 - Restores matching windows after login, once macOS or the app reopens them.
 - Optionally follows MacBook brightness and remembers supported monitors' brightness.
 - Configures touch and brightness separately for each monitor, including mixed models and connections.
-
-This is a free community project for compatible **wch.cn `27C0:0859`** controllers. Check the [tested hardware and limitations](docs/compatibility.md) first. DisplayLink, when needed, handles video separately. Multi-finger gestures such as pinch-to-zoom are not currently supported.
 
 ## Get started
 

@@ -1,5 +1,5 @@
 name: Hardware compatibility report
-description: Report a working or non-working display that exposes the WCH touch controller.
+description: Tell us about your touchscreen. Unknown models and technical details are welcome.
 title: "[Compatibility]: "
 labels:
   - compatibility
@@ -8,53 +8,59 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping identify the retail names that use this controller. Reports of both working and non-working hardware are useful. Do not include controller serial numbers or USB location IDs.
+        Help other owners find their monitor in the [monitor list](https://github.com/cryptoteatime/wch-touchscreen-macos/blob/main/docs/monitors.md). Working and non-working results are useful; you can also ask about an untested model. Fill in what you know and leave optional details blank.
+
+        Do not post serial numbers, order details, USB location IDs, or a full system report. [The compatibility guide](https://github.com/cryptoteatime/wch-touchscreen-macos/blob/main/docs/compatibility.md) explains how to check your monitor without Terminal.
 
   - type: input
     id: product-name
     attributes:
-      label: Brand and exact retail product name
-      placeholder: Prechen HD-123 12.3-inch Portable Touch Screen Secondary Monitor
+      label: Which monitor do you have?
+      description: Copy the product name or public product link from the box, label, or store listing. If you cannot identify it, describe the screen and say "unknown."
+      placeholder: Prechen HD-123 12.3-inch touchscreen, or a public product link
     validations:
       required: true
 
   - type: input
     id: model
     attributes:
-      label: Model number
+      label: Model number (if known)
       placeholder: HD-123
     validations:
-      required: true
+      required: false
 
   - type: input
     id: listing
     attributes:
-      label: Store link and ASIN or equivalent identifier
-      placeholder: https://www.amazon.example/... — ASIN B0...
+      label: Public product link or product code (optional)
+      description: A SKU, UPC/EAN barcode, or Amazon ASIN can help identify the variant. Include its source; do not include your order or device serial number.
+      placeholder: Manufacturer product page, SKU, UPC/EAN, or ASIN
     validations:
       required: false
 
   - type: input
     id: usb-controller
     attributes:
-      label: USB manufacturer, product name, and VID:PID
-      description: Include public product information only. Do not include a serial number or location ID.
-      placeholder: wch.cn TouchScreen — 27C0:0859
+      label: Touch hardware details (optional)
+      description: If you checked System Information, copy the USB device name, Vendor ID, and Product ID. It is fine to leave this blank. Do not include a serial number or location ID.
+      placeholder: wch.cn TouchScreen — Vendor ID 0x27c0, Product ID 0x0859
     validations:
-      required: true
+      required: false
 
   - type: input
     id: resolution
     attributes:
-      label: Native display resolution
-      placeholder: 1920x720
+      label: Screen size and resolution (if known)
+      description: Use the box or product description. These details are optional.
+      placeholder: 12.3 inches, 1920 × 720
     validations:
-      required: true
+      required: false
 
   - type: input
     id: mac
     attributes:
       label: Mac model and macOS version
+      description: Find these in Apple menu → About This Mac. Copy the model and macOS version only, without the serial number. Say "unknown" if you cannot check.
       placeholder: Mac mini, macOS 15.x
     validations:
       required: true
@@ -62,7 +68,8 @@ body:
   - type: dropdown
     id: connection
     attributes:
-      label: Connection path
+      label: How is the monitor connected?
+      description: Choose all that apply, or choose "Not sure" and describe the cables below.
       multiple: true
       options:
         - Direct USB-C
@@ -70,6 +77,44 @@ body:
         - USB-A for touch plus HDMI for video
         - USB-C for touch plus HDMI for video
         - Other
+        - Not sure
+    validations:
+      required: false
+
+  - type: input
+    id: connection-details
+    attributes:
+      label: Cables, adapter, or dock (optional)
+      description: Describe both ends of the cables and any adapter or dock. Mention DisplayLink only if you know it is being used.
+      placeholder: Mac USB-C → dock → HDMI, plus a USB cable for touch
+    validations:
+      required: false
+
+  - type: input
+    id: driver-version
+    attributes:
+      label: WCH version or commit (if known)
+      description: Include the release number or commit you installed. If you have not installed WCH, say so.
+    validations:
+      required: false
+
+  - type: input
+    id: test-date
+    attributes:
+      label: When did you test? (optional)
+      placeholder: Today, or YYYY-MM-DD
+    validations:
+      required: false
+
+  - type: dropdown
+    id: overall-result
+    attributes:
+      label: What happened?
+      options:
+        - The features I tried worked
+        - Some features worked
+        - Touch did not work
+        - I have not tested WCH yet
     validations:
       required: true
 
@@ -95,26 +140,25 @@ body:
   - type: textarea
     id: results
     attributes:
-      label: Results
-      description: Describe pairing, tapping, scrolling, hold-drag, double-click, reconnect, sleep/wake, brightness, and reboot behavior for every connected panel.
+      label: What did you try?
+      description: Describe what worked or failed on each screen. Mark anything you have not tried as "untested"; you do not need to test everything. If you have not installed WCH, explain what you want to check.
       placeholder: |
         Panels tested:
-        Pairing:
-        Single tap:
-        Scrolling:
-        Hold-drag:
-        Double-click:
-        Reconnect/reboot:
+        Pairing targets and taps on the correct screen:
+        Portrait/landscape orientation:
+        Scrolling, dragging, double-click, and right-click:
+        Brightness:
+        Unplug/reconnect:
         Sleep/wake:
-        Brightness changes and recovery:
+        Full Mac restart:
     validations:
       required: true
 
   - type: textarea
     id: notes
     attributes:
-      label: Additional hardware or firmware notes
-      description: Mention differences between multiple panels, firmware labels, or retail variants without exposing unique device identifiers.
+      label: Anything else? (optional)
+      description: Mention differences between panels or listing variants. Crop or cover serial numbers and order details in any photos.
     validations:
       required: false
 

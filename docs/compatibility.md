@@ -1,47 +1,62 @@
-# Compatibility and verification
+# Will my touchscreen work?
 
-[Back to README](../README.md)
+[Back to README](../README.md) · [Monitor list](monitors.md) · [Setup guide](setup.md)
 
-The project targets macOS 13 or later and compatible **wch.cn TouchScreen USB `27C0:0859`** controllers. A matching USB identifier alone does not establish compatibility. Controller firmware, report formats, and display identity can differ between retail products.
+## Quick answer
 
-## Tested configuration
+WCH makes supported touchscreens behave like a mouse on your Mac: tap to click, slide to scroll, and hold to right-click. It can map each screen separately, including portrait screens. It requires macOS 13 or later.
 
-| Component | Verified setup |
+**Start with the [monitor list](monitors.md).** You can search by brand, model, or product number. Each entry says whether it was tested with this project, reported working with an earlier driver, or still needs Mac testing. A missing entry means we don't have a report yet.
+
+You don't need to know which driver came with your monitor. The important part is the touch hardware inside it. WCH currently works with one specific family of touch controllers, so it cannot add touch support to every USB-C or HDMI monitor.
+
+## Find your monitor
+
+1. Look for the brand and model on the back of the screen, its box, or your order's product description. A product link is useful too; you do not need to share your order or receipt.
+2. Look up that name in the [monitor list](monitors.md). Match the exact model and variant where possible.
+3. If it is missing, use the optional check below or [send a hardware report](https://github.com/cryptoteatime/wch-touchscreen-macos/issues/new?template=compatibility-report.yml) with what you know. Technical fields can be left blank.
+
+Names such as **HDMI**, **Type-c**, and **USB Display** in macOS may describe a connection rather than the retail model. Similar-looking monitors can also contain different touch hardware.
+
+<details>
+<summary>Check the touch hardware in System Information — no Terminal needed</summary>
+
+1. Connect and power the monitor using its USB data/touch connection. HDMI alone does not carry USB touch input; some monitors need a separate USB cable.
+2. Hold **Option** while opening the **Apple menu**, then choose **System Information**. [Apple's instructions](https://support.apple.com/guide/system-information/welcome/mac) also describe opening it through System Settings.
+3. Select **USB** under Hardware in the sidebar. Look for **TouchScreen** or **wch.cn**, and select that device.
+4. Check **Vendor ID** and **Product ID**. The controller this driver looks for is **Vendor ID `0x27c0`**, **Product ID `0x0859`**. These identify the type of hardware; they are not your device's serial number.
+
+**Both match:** your monitor is a candidate. A physical test is still needed because its firmware and the way it sends touch input may differ.
+
+**Different numbers:** this driver does not currently recognize that controller. Choosing another display profile does not add support for it.
+
+**No touch device appears:** check the monitor's data port, cable, and power before deciding it is incompatible. A working picture does not prove the USB touch connection is working.
+
+If asking for help, copy just the device name and these two IDs. Keep serial numbers, location IDs, and full system reports private.
+
+</details>
+
+## Picture, touch, and brightness are separate
+
+| What you want | What it needs |
 | --- | --- |
-| Mac | Apple Silicon MacBook Pro |
-| OS | macOS 26.6.2 |
-| Touch controllers | Two WCH `27C0:0859` controllers |
-| Display descriptors | Type-c and HDMI; EDID vendor/model `4A8B:2200` |
-| External layout | 1050 × 1680, rotated 90° and 270° |
-| Driver | Fork versions 1.2–1.5 |
-| Brightness | Native Apple Silicon DDC/CI; DisplayLink Manager 17.0.24 |
-
-The marketed monitor model has not been independently verified. These shared product identifiers are more reliable than assuming an Amazon listing variant. Other panels, Intel Macs, and other macOS versions need hardware testing. The Intel brightness backend is experimental and requires a unique framebuffer hardware match. Closed-lid and desktop-only layouts have automated scenario coverage; physical validation remains pending.
-
-The original Xeneon configuration remains available through `--profile xeneon`. Prior upstream reports are retained in the [historical upstream documentation](upstream-readme.md); they do not establish verification of this fork's new features on those products.
+| A picture on the screen | A working video connection supported by your Mac. Keep DisplayLink if your monitor's video connection requires it; WCH does not require DisplayLink for every setup. |
+| Taps on the correct screen | Compatible touch hardware, a USB data connection, WCH's permissions, and screen pairing. |
+| Scrolling, dragging, and right-click | WCH's [one-finger controls](../README.md#touch-controls). Multi-finger gestures are not supported, even if the monitor advertises them for Windows. |
+| Brightness controls and memory | A monitor and connection that allow software brightness control. Touch can work even when brightness control is unavailable. See [brightness](brightness.md). |
+| Monitor layout and window memory | Enable the option in WCH. After a restart, macOS or each app must reopen its windows before WCH can put them back. See [desktop restoration](desktop-restoration.md). |
 
 ## Verification
 
-- Physical tests confirmed portrait touch mapping, pointer placement, normal clicking, long-press right-click, and dragging on both panels.
-- Physical unplug/reconnect testing in 1.4.0 retained both monitor profiles, restored the portrait display layout and both touch mappings, and returned nine open windows to their saved positions and sizes.
-- Version 1.5 testing confirmed smooth brightness following and two successful reconnects on November 1, 2026. One instrumented cycle restored five open windows with zero failures, pending windows, or skips about one second after all displays appeared; both touch controllers became active afterward. Initial brightness communication failures during reconnect recovered automatically. This timing is one observation, not a performance guarantee.
-- Simulated process/window identity changes restored saved placements. Automated scenarios cover delayed app startup, logout closures, transient missing windows, and late display geometry changes.
-- Full restart validation of the layout protection introduced in 1.2.1 remains pending. Automated checks cannot verify every application's macOS Resume behavior.
-- New brightness scenarios cover rapid target changes, slow reads, independent monitor workers, stale completions, reused display IDs, disconnect/reconnect invalidation, bounded diagnostics, and operation without a built-in source. Desktop scenarios cover single-external, closed-lid, and separate topology snapshots.
-- Distributed-notification checks exercise background delivery while AppKit suspends ordinary notifications, subscription replacement, and cleanup while leaving AppKit in control of suspension.
-- [macOS CI](https://github.com/cryptoteatime/wch-touchscreen-macos/actions/workflows/verify.yml) runs the Swift package tests, standalone regression scenarios, and app build/signature verification on macOS 15 and 26 for Apple Silicon and Intel. A passing VM job does not establish physical display compatibility.
+| Setup or feature | Current evidence |
+| --- | --- |
+| Two portable touchscreens on an Apple Silicon (M-series) MacBook Pro | Physically tested: portrait touch, clicking, right-click, dragging, brightness following, and restoring layout and windows after reconnect. The retail model is still unidentified. |
+| CORSAIR XENEON EDGE and Prechen HD-123 | Reports from the drivers this project builds on. See the [model entries](monitors.md#earlier-driver-reports) for the tested features and limits. |
+| Intel Macs and other macOS versions | Builds and automated checks run on Apple Silicon and Intel, on macOS 15 and 26. This does not establish physical monitor compatibility; Intel brightness support is experimental. |
+| Closed-lid laptops, desktop Macs, and full reboot restoration | Automated scenarios are covered. Physical validation of these configurations and the current reboot restoration changes remains pending. |
 
-### Brightness and monitor profiles
+The [hardware verification details](hardware-verification.md) retain the exact versions, connection types, test observations, and remaining gaps. Model reports apply to the tested setup and features; they are not a promise that every version sold under that name behaves identically.
 
-- MacBook brightness controls changed both panels. Native writes were verified with hardware readback; DisplayLink writes received acknowledgements.
-- Physical-button testing confirmed that DisplayLink reports cached brightness rather than live button changes. The HDMI panel retained its setting on some reconnects but reset to 10% in a later test. Version 1.4.1 explicitly restores WCH's saved DisplayLink level with bounded acknowledgement retries.
-- Brightness regression scenarios cover startup defaults, one-percent button changes, restart persistence, duplicate identities, bounded failures, and MacBook following.
-- Profile regression scenarios cover mixed display models, native-only and mixed connections, independent following preferences, excluded monitors, and configuration migration. Other monitor models and connection combinations still require hardware testing.
-- Physical reconnect testing in 1.4.1 restored both saved brightness levels, both profiles, the portrait layout, and nine windows, with touch working on both panels. The HDMI panel initially reported 10%, then acknowledged the saved 100% setting; the operator confirmed the visible brightness returned without a button press. Native brightness was confirmed by hardware readback. A brief dim interval remains while DisplayLink reconnects and restoration settles.
-- Full reboot brightness testing remains pending. See [brightness behavior and limitations](brightness.md).
+## Help grow the list
 
-The controller's current input mode supplies a single contact. Pinch-to-zoom and multi-finger gestures require a working multi-contact protocol and are not available through a settings toggle.
-
-## Report your hardware
-
-Use the [compatibility report form](https://github.com/cryptoteatime/wch-touchscreen-macos/issues/new?template=compatibility-report.yml). Include the retail model, macOS version, public product identifiers, and what worked on each screen. Omit unique serial numbers, display UUIDs, USB location IDs, and raw saved profiles.
+[Report your monitor](https://github.com/cryptoteatime/wch-touchscreen-macos/issues/new?template=compatibility-report.yml), including unsuccessful results. A product name or link, your Mac/macOS version, and a description of what you tried are enough to start. Model numbers and public product codes such as SKU, UPC/EAN, or Amazon ASIN help distinguish variants when available. Please omit order details, serial numbers, and raw saved profiles.
