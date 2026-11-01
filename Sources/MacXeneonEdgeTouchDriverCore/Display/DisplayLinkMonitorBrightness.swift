@@ -16,7 +16,7 @@ final class DisplayLinkMonitorBrightness {
     var onUpdate: (() -> Void)?
     private let center = DistributedNotificationCenter.default()
     private let lock = NSLock()
-    private var tokens: [NSObjectProtocol] = []
+    private var observation: BrightnessNotificationObservation?
     private var list: [Endpoint] = []
     private var receivedAt: TimeInterval = 0
     private var results: [String: (Double, Int, TimeInterval)] = [:]
@@ -34,12 +34,17 @@ final class DisplayLinkMonitorBrightness {
         lock.lock(); let changed = active != enabled; active = enabled; lock.unlock()
         guard changed else { return }
         if !enabled { stop(); return }
-        tokens.append(center.addObserver(forName: Notification.Name("com.displaylink.DisplayListUpdated"), object: nil, queue: .main) { [weak self] in self?.receiveList($0) })
-        tokens.append(center.addObserver(forName: Notification.Name("com.displaylink.BrightnessUpdated"), object: nil, queue: .main) { [weak self] in self?.receiveBrightness($0) })
+        observation = BrightnessNotificationObservation(names: [
+            Notification.Name("com.displaylink.DisplayListUpdated"),
+            Notification.Name("com.displaylink.BrightnessUpdated")
+        ], center: center) { [weak self] notification in
+            if notification.name.rawValue == "com.displaylink.DisplayListUpdated" { self?.receiveList(notification) }
+            else { self?.receiveBrightness(notification) }
+        }
         refresh()
     }
     func stop() {
-        tokens.forEach(center.removeObserver); tokens.removeAll()
+        observation?.stop(); observation = nil
         lock.lock(); active = false; list.removeAll(); results.removeAll(); receivedAt = 0; lock.unlock()
     }
     func refresh() {

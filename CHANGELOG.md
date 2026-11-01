@@ -4,12 +4,13 @@
 
 - Samples brightness changes every 100 ms and coalesces rapid adjustments to the latest value, with independent native monitor workers and immediate DisplayLink dispatch.
 - Re-arms saved brightness restoration after display events, paired USB reconnects, sleep/wake, and DisplayLink Manager restarts; stale work cannot confirm a newer connection or target.
+- Keeps DisplayLink status and brightness replies active when a settings window closes or WCH loses focus.
 - Adds session recovery counters, bounded recent brightness events, write latency, and a menu command to retry saved brightness.
 - Adds external brightness selection without a built-in display, separate open/closed-lid desktop snapshots, and single-external desktop support while preserving capture and matching safeguards.
 - Adds experimental Intel framebuffer DDC/CI with unique hardware matching and validated reads before writes.
 - Expands automated checks to Apple Silicon and Intel on macOS 15 and 26, with rapid-input, reconnect, delayed-result, and external-only topology scenarios.
 
-Physical validation of this version is pending; see [compatibility](docs/compatibility.md).
+Brightness following and physical reconnects have been tested on the documented dual-panel setup. Full reboot, closed-lid, and Intel hardware validation remain pending; see [compatibility](docs/compatibility.md).
 
 ## 1.4.0 — 2026-10-19
 

@@ -155,6 +155,40 @@ func exerciseMonitorBrightness(_ check: (Bool, String) -> Void) throws {
     check(disabled.stepDisplayLink(hdmi(), now: 100).isEmpty, "The fast path also respects disabled brightness control")
 }
 
+func exerciseBrightnessNotifications(_ check: (Bool, String) -> Void) {
+    let center = DistributedNotificationCenter.default()
+    let wasSuspended = center.suspended
+    let name = Notification.Name("wch.brightness-regression." + UUID().uuidString)
+    var immediate: [String] = [], witness: [String] = []
+    let observation = BrightnessNotificationObservation(names: [name], center: center) {
+        if let value = $0.object as? String { immediate.append(value) }
+    }
+    defer { observation.stop(); center.suspended = wasSuspended }
+    func wait(_ condition: () -> Bool) -> Bool {
+        let deadline = Date(timeIntervalSinceNow: 5)
+        while !condition() && Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) }
+        return condition()
+    }
+    // AppKit does this when a settings window loses focus. The sender is not
+    // required to mark its reply for immediate delivery.
+    center.suspended = true
+    center.postNotificationName(name, object: "first", userInfo: nil, deliverImmediately: false)
+    check(wait { immediate == ["first"] }, "Vendor subscriptions receive replies while AppKit notifications are suspended")
+    check(center.suspended, "Vendor observers do not change AppKit's global suspension state")
+
+    observation.stop()
+    let deliveryWitness = BrightnessNotificationObservation(names: [name], center: center) {
+        if let value = $0.object as? String { witness.append(value) }
+    }
+    defer { deliveryWitness.stop() }
+    center.postNotificationName(name, object: "second", userInfo: nil, deliverImmediately: false)
+    check(wait { witness.contains("second") }, "Replacement subscriptions can receive later vendor replies")
+    check(immediate == ["first"], "Stopped subscriptions do not receive later notifications")
+    center.suspended = false
+    center.postNotificationName(name, object: "third", userInfo: nil, deliverImmediately: false)
+    check(wait { witness.contains("third") }, "Vendor delivery continues after AppKit resumes notifications")
+}
+
 func exerciseBrightnessWork(_ check: (Bool, String) -> Void) {
     var left = MonitorBrightnessWork(connection: "first")
     left.requestRead()
