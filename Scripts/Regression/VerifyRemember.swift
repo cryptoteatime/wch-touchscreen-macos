@@ -8,7 +8,11 @@ import Foundation
         defer { try? FileManager.default.removeItem(at: root) }
         var checks = 0
         func check(_ condition: @autoclosure () -> Bool, _ message: String) {
-            precondition(condition(), message); checks += 1
+            guard condition() else {
+                FileHandle.standardError.write(Data("Connection/gesture regression failed: \(message)\n".utf8))
+                exit(1)
+            }
+            checks += 1
         }
         func display(_ id: UInt32, _ serial: UInt32, _ x: Int = 0) -> DisplaySnapshot {
             DisplaySnapshot(displayID: id, vendorNumber: 19083, modelNumber: 8704, serialNumber: serial,
@@ -71,26 +75,43 @@ import Foundation
         try Data("{\"restorePreviousFocus\":true}".utf8).write(to: configURL)
         check(DriverConfiguration.load(from: configURL).configuration.restorePreviousFocus, "Optional previous-window focus restoration loads")
         let queue = DispatchQueue(label: "local.gesture-regression")
+        func waitFor(_ message: String, _ condition: () -> Bool) {
+            let deadline = ProcessInfo.processInfo.systemUptime + 3
+            while !queue.sync(execute: condition) {
+                guard ProcessInfo.processInfo.systemUptime < deadline else {
+                    FileHandle.standardError.write(Data("Timed out: \(message)\n".utf8)); exit(1)
+                }
+                Thread.sleep(forTimeInterval: 0.005)
+            }
+        }
         let sink = CountedClicks()
         let cursor = TestCursor()
         let gesture = GestureController(mapperProvider: { CoordinateMapper(displayBounds: CGRect(x: 0, y: 0, width: 1200, height: 1920)) },
             inputSink: sink, cursorController: cursor,
             timing: GestureTiming(warpToClickDelayMs: 0, downToUpDelayMs: 20, clickToWarpBackDelayMs: 10, tapDebounceMs: 50, holdToDragMs: 30),
             schedulingQueue: queue)
-        queue.sync {
-            gesture.handle(TouchEvent(kind: .down, contactID: 0, rawX: 8000, rawY: 4000, timestamp: .now()))
-            gesture.handle(TouchEvent(kind: .up, contactID: 0, rawX: 8000, rawY: 4000, timestamp: .now()))
+        let began = DispatchTime.now().uptimeNanoseconds
+        func event(_ kind: TouchEvent.Kind, _ milliseconds: UInt64) -> TouchEvent {
+            TouchEvent(kind: kind, contactID: 0, rawX: 8000, rawY: 4000,
+                       timestamp: DispatchTime(uptimeNanoseconds: began + milliseconds * 1_000_000))
         }
-        Thread.sleep(forTimeInterval: 0.08)
+        queue.sync {
+            gesture.handle(event(.down, 0))
+            gesture.handle(event(.up, 10))
+        }
+        waitFor("quick-tap cleanup") { gesture.state == .idle }
         queue.sync { check(sink.events == ["down:1", "up:1"], "One quick tap must emit exactly one click") }
         queue.sync {
             sink.events = []
             gesture.forceCancel()
-            gesture.handle(TouchEvent(kind: .down, contactID: 0, rawX: 8000, rawY: 4000, timestamp: .now()))
+            gesture.handle(event(.down, 200))
         }
-        Thread.sleep(forTimeInterval: 0.07)
-        queue.sync { gesture.handle(TouchEvent(kind: .up, contactID: 0, rawX: 8000, rawY: 4000, timestamp: .now())) }
-        Thread.sleep(forTimeInterval: 0.06)
+        waitFor("held-contact classification") {
+            if case .singleTouch(let contact) = gesture.state { return contact.phase == .dragging }
+            return false
+        }
+        queue.sync { gesture.handle(event(.up, 300)) }
+        waitFor("held-contact cleanup") { gesture.state == .idle }
         queue.sync { check(sink.events == ["down:1", "up:1"], "One held contact must emit exactly one click") }
         print("Persistent connection and gesture regression checks passed: \(checks)")
     }

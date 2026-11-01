@@ -222,9 +222,9 @@ final class MacXeneonEdgeTouchDriverApplicationTests: XCTestCase {
         XCTAssertGreaterThan(record["validatedEvents"] as? Int ?? 0, 0, "Exercise recovered events, not only rejected reports")
         XCTAssertEqual(record["state"] as? String, "suspended")
         app.handleStormRecoveryTick(for: device, at: DispatchTime(uptimeNanoseconds: start + 2_000_000_000))
-        waitForAsyncWork(milliseconds: 350)
+        waitForCalibration(app, controllerCount: 1)
         XCTAssertEqual(try statusRecords(app)[0]["state"] as? String, "calibrating")
-        performCalibration(app, device: device, startAt: start + 2_100_000_000)
+        performCalibration(app, device: device, startAt: max(start + 2_100_000_000, DispatchTime.now().uptimeNanoseconds + 1_000_000))
         XCTAssertEqual(store.pairings.count, 1)
         XCTAssertTrue(input.calls.isEmpty)
     }
@@ -315,8 +315,19 @@ final class MacXeneonEdgeTouchDriverApplicationTests: XCTestCase {
         XCTAssertEqual(overlay.calls, calls)
         XCTAssertTrue(try statusRecords(app).allSatisfy { $0["state"] as? String == "suspended" })
         app.handleStormRecoveryTick(for: devices[1], at: DispatchTime(uptimeNanoseconds: start + 2_000_000_000))
-        waitForAsyncWork(milliseconds: 350)
+        waitForCalibration(app, controllerCount: devices.count)
         XCTAssertTrue(try statusRecords(app).allSatisfy { $0["state"] as? String == "calibrating" })
+    }
+
+    private func waitForCalibration(_ app: MacXeneonEdgeTouchDriverApplication, controllerCount: Int) {
+        // Queue delivery and overlay admission can exceed 350 ms on shared VMs.
+        // Keep the real state requirement and fail if it never becomes ready.
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let object = try? JSONSerialization.jsonObject(with: Data(app.handleControlCommand("status").utf8)) as? [String: Any],
+                  let records = object["controllers"] as? [[String: Any]] else { return false }
+            return records.count == controllerCount && records.allSatisfy { $0["state"] as? String == "calibrating" }
+        }, object: nil)
+        wait(for: [ready], timeout: 5)
     }
 
     private func emitStormWithRecoveredContact(_ app: MacXeneonEdgeTouchDriverApplication,
