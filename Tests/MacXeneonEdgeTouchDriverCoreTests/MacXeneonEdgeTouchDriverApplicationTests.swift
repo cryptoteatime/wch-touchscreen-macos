@@ -68,8 +68,7 @@ final class MacXeneonEdgeTouchDriverApplicationTests: XCTestCase {
         XCTAssertTrue(input.calls.isEmpty, "A contact held before automatic pairing must not click")
         app.handleTouchEvent(deviceEvent(controller, .down, rawX: 0, rawY: 0))
         app.handleTouchEvent(deviceEvent(controller, .up, rawX: 0, rawY: 0))
-        let insideCorner = CGPoint(x: first.bounds.minX + 1, y: first.bounds.minY + 1)
-        XCTAssertEqual(input.calls, [.mouseDown(insideCorner), .mouseUp(insideCorner)])
+        XCTAssertEqual(input.calls, [.mouseDown(first.bounds.origin), .mouseUp(first.bounds.origin)])
 
         displays.append(second)
         app.refreshDisplayMappings(reason: "second display appears before its controller")
