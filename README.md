@@ -33,7 +33,7 @@ cd wch-touchscreen-macos
 ./Scripts/install.sh --profile portable-dual-wch
 ```
 
-Grant **Accessibility** and **Input Monitoring** to **WCH Touch Driver** in System Settings → Privacy & Security, then follow the touch targets to pair your screens. WCH starts automatically at login. Existing settings are preserved during updates.
+Grant **Accessibility** and **Input Monitoring** to **WCH Touch Driver** in System Settings → Privacy & Security, then follow the pairing guidance when prompted. WCH starts automatically at login. Existing settings are preserved during updates.
 
 Use **WCH → Monitor Profiles…** to select your monitors and their brightness behavior, and **Touch Settings…** to adjust gestures. The [setup guide](docs/setup.md) covers permissions, updates, and removal.
 

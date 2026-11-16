@@ -4,6 +4,40 @@ import Foundation
 import XCTest
 
 final class PairingStoreTests: XCTestCase {
+    func testLearnedModelsCoexistWithConnectionMemoryAcrossRestart() throws {
+        let url = temporaryURL()
+        let target = makeDisplay(id: 41, serial: 0, vendor: 501, model: 601)
+        let reconnected = makeDisplay(id: 49, serial: 0, vendor: 501, model: 601)
+        let device = TouchDeviceIdentity(locationID: 1, registryEntryID: 100)
+        let current = TouchDeviceIdentity(locationID: 1, registryEntryID: 200)
+        let store = PairingStore(url: url, bootSessionIdentifier: "before", rememberConnections: true)
+        try store.assign(device: device, to: target, connectedDevices: [device], displays: [target])
+        try store.rememberModel(of: target)
+        let reloaded = PairingStore(url: url, bootSessionIdentifier: "after", rememberConnections: true)
+        XCTAssertTrue(reloaded.recognizesModel(of: reconnected))
+        XCTAssertEqual(reloaded.resolveDisplay(for: current, connectedDevices: [current],
+                                               displays: [reconnected]), reconnected)
+        let duplicate = makeDisplay(id: 50, serial: 0, vendor: 501, model: 601)
+        XCTAssertNil(reloaded.resolveDisplay(for: current, connectedDevices: [current],
+                                             displays: [reconnected, duplicate]),
+                     "Recognizing a model cannot authorize an ambiguous physical mapping")
+    }
+
+    func testLearnedDisplayModelSurvivesMappingInvalidationAndReload() throws {
+        let url = temporaryURL()
+        let target = makeDisplay(id: 41, serial: 0, vendor: 501, model: 601)
+        let reconnected = makeDisplay(id: 49, serial: 0, vendor: 501, model: 601)
+        let device = TouchDeviceIdentity(locationID: 1)
+        let store = PairingStore(url: url)
+        try store.assign(device: device, to: target, connectedDevices: [device], displays: [target])
+        try store.rememberModel(of: target)
+        try store.invalidateAmbiguous()
+
+        let reloaded = PairingStore(url: url)
+        XCTAssertTrue(reloaded.recognizesModel(of: reconnected))
+        XCTAssertNil(reloaded.resolveDisplay(for: device, connectedDevices: [device], displays: [reconnected]))
+    }
+
     func testOlderCalibrationCannotBypassNewStormAdmissionPolicy() throws {
         let url = temporaryURL()
         let device = TouchDeviceIdentity(locationID: 1, serialNumber: "UNIQUE")

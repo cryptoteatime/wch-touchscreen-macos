@@ -2,9 +2,9 @@
 
 Start with README.md. Detailed installation is in docs/setup.md, hardware and verification in docs/compatibility.md, and restoration behavior in docs/desktop-restoration.md. Read CONTRIBUTING.md for development and SECURITY.md for privacy. Read THIRD_PARTY_NOTICES.md and preserve LICENSE and upstream Git history.
 
-This is cryptoteatime's fork of mrnocreativity/xeneon-wch-touchscreen-driver-macos at 707106e828d178db004a7ec1b3d8eee9447b03b9, descended from ajvwhite/MacXeneonEdgeTouchDriver.
+This is cryptoteatime's fork of mrnocreativity/xeneon-wch-touchscreen-driver-macos, descended from ajvwhite/MacXeneonEdgeTouchDriver. Upstream through 69e8869 is integrated; see docs/upstream-integration.md for intentional installer and runtime differences. Review future merges rather than resetting this fork to upstream.
 
-Build with python3 Scripts/build-app.py. Install with ./Scripts/install.sh --profile portable-dual-wch (new portable setup) or --profile xeneon (original defaults). Existing config is preserved. Tests: swift test and python3 Scripts/test-regressions.py. WCH_SDK_PATH can select an already installed compatible SDK.
+Build with python3 Scripts/build-app.py. Install with ./Scripts/install.sh --profile portable-dual-wch (new portable setup) or --profile xeneon (original defaults). Existing config is preserved. Tests: swift test, python3 Scripts/test-regressions.py, and python3 Scripts/test-launch-agent.py. WCH_SDK_PATH can select an already installed compatible SDK.
 
 The app and LaunchAgent intentionally keep com.ajvwhite.MacXeneonEdgeTouchDriver to avoid duplicate HID owners. Do not run a second driver instance to query status; use the installed executable's status/layout-status control commands.
 

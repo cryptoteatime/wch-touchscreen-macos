@@ -2,6 +2,11 @@
 
 ## 1.5.0 — Unreleased
 
+- Integrates upstream privacy setup guidance, a read-only hardware check, and guided pairing for unlisted displays while preserving explicit Monitor Profiles and portrait mapping.
+- Recognizes Prechen HD-123 panels with default settings and automatically routes a lone supported screen/controller when the topology is unambiguous.
+- Remembers physically verified display models and offers an optional compatibility report preview.
+- Waits for confirmed LaunchAgent shutdown before replacing or removing the app, including during installer rollback. See [upstream integration notes](docs/upstream-integration.md).
+
 - Samples brightness changes every 100 ms and coalesces rapid adjustments to the latest value, with independent native monitor workers and immediate DisplayLink dispatch.
 - Re-arms saved brightness restoration after display events, paired USB reconnects, sleep/wake, and DisplayLink Manager restarts; stale work cannot confirm a newer connection or target.
 - Keeps DisplayLink status and brightness replies active when a settings window closes or WCH loses focus.

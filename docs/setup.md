@@ -22,7 +22,11 @@ The app handles touch. Keep DisplayLink running if your monitors need it for vid
 
 In **System Settings → Privacy & Security**, enable **Accessibility** and **Input Monitoring** for the exact installed WCH app. These allow touchscreen input, pointer control, and optional window placement. See [privacy and permissions](../SECURITY.md).
 
-Touch and release the pairing target on each physical screen. Keep the same Mac USB ports, hubs, cables, and monitor-side data ports when reconnecting. Changing that arrangement or exchanging identical panels can require pairing again.
+If privacy access is missing, WCH shows a setup window. Approve access locally, then choose **Check Again**. macOS may label mouse-event permission **Device Control and Data Access**; **Accessibility** is also needed for optional window restoration.
+
+Touch and release the pairing target on each physical screen when prompted. With the default Xeneon preset, WCH also recognizes the Prechen HD-123 and can route one compatible screen and controller automatically. For an unlisted model, use the mouse or trackpad to select its screen, then verify it with a physical tap. Explicit Monitor Profiles take precedence over this discovery flow.
+
+Keep the same Mac USB ports, hubs, cables, and monitor-side data ports when reconnecting. Changing that arrangement or exchanging identical panels can require pairing again.
 
 New portable-profile installs enable connection memory. Other configurations can opt in through Touch Settings. Connection memory remembers the connection arrangement; it does not give identical controllers a unique hardware identity.
 
@@ -75,6 +79,7 @@ This stops WCH and moves the app and startup entry into a recoverable backup. Se
 ## Troubleshooting
 
 - **Video works but touch does not:** check permissions, the monitor's data port, and that another touch driver is not running.
+- **Unsure whether the touch controller matches:** after building, run `"artifacts/WCH Touch Driver.app/Contents/MacOS/MacXeneonEdgeTouchDriver" --check-hardware`. This reads descriptor metadata without starting touch input. A match is a compatibility clue, not a physical test of all features.
 - **Touch goes to the wrong screen:** choose Pair Screens Again and use the physical targets.
 - **Windows have not returned yet:** check Desktop Layout Status and the [restoration limits](desktop-restoration.md#limits).
 - **The build reports an SDK mismatch:** see [developer instructions](../CONTRIBUTING.md#checks); a compatible SDK may already be installed.

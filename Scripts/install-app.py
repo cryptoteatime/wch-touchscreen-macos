@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 from build_support import ROOT
+from launch_agent import stop_agent
 
 def bootstrap_agent(domain, agent):
     # bootout can acknowledge before launchd finishes removing the old job.
@@ -69,12 +70,14 @@ with tempfile.TemporaryDirectory(prefix=".wch-install-", dir=app_dir) as scratch
     staged = Path(scratch) / destination.name
     shutil.copytree(source, staged)
     subprocess.run(["codesign", "--verify", "--strict", str(staged)], check=True)
-    subprocess.run(["launchctl", "bootout", domain + "/" + label], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    stop_agent(domain, label)
     old = Path(scratch) / "Previous.app"
+    published = False
     try:
         if destination.exists():
             destination.rename(old)
         staged.rename(destination)
+        published = True
         config = plistlib.loads((ROOT / "Resources" / (label + ".plist.template")).read_bytes())
         config["ProgramArguments"] = [str(destination / "Contents/MacOS/MacXeneonEdgeTouchDriver")]
         config["StandardOutPath"] = str(logs / "stdout.log")
@@ -86,8 +89,14 @@ with tempfile.TemporaryDirectory(prefix=".wch-install-", dir=app_dir) as scratch
             subprocess.run(["launchctl", "enable", domain + "/" + label], check=True)
             bootstrap_agent(domain, agent)
     except Exception:
-        subprocess.run(["launchctl", "bootout", domain + "/" + label], capture_output=True)
-        if destination.exists():
+        try:
+            stop_agent(domain, label)
+        except Exception:
+            # Do not alter an app that launchd might still be running. The
+            # permanent backup above survives temporary staging cleanup.
+            print("Could not confirm shutdown for rollback. Recovery copy:", backup, file=sys.stderr)
+            raise
+        if published and destination.exists():
             shutil.rmtree(destination)
         if old.exists():
             old.rename(destination)

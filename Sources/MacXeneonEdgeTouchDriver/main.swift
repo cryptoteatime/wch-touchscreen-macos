@@ -6,10 +6,19 @@ import MacXeneonEdgeTouchDriverCore
 struct MacXeneonEdgeTouchDriverMain {
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments == ["--check-hardware"] {
+            let result = TouchHardwareProbe.detect()
+            switch result {
+            case .supported: print("Supported USB touch controller detected.")
+            case .noController: print("No supported USB touch controller detected.")
+            case .unverifiedReportFormat: print("A touch controller was detected, but its report format could not be verified.")
+            }
+            exit(result.rawValue)
+        }
         if !arguments.isEmpty {
             guard arguments.count == 1,
-                  (["status", "show-monitor-profiles", "re-pair", "cancel-pairing", "layout-status", "save-layout", "restore-layout", "brightness-status", "remember-brightness", "follow-brightness", "brightness-independent", "brightness-off", "sync-brightness", "restore-brightness"].contains(arguments[0]) || MonitorBrightnessCommand.level(arguments[0]) != nil) else {
-                print("Usage: MacXeneonEdgeTouchDriver [status | show-monitor-profiles | re-pair | cancel-pairing | layout-status | save-layout | restore-layout | brightness-status | remember-brightness | follow-brightness | brightness-independent | brightness-off | sync-brightness | restore-brightness | set-brightness:0..100]")
+                  (["status", "setup-status", "show-monitor-profiles", "re-pair", "cancel-pairing", "layout-status", "save-layout", "restore-layout", "brightness-status", "remember-brightness", "follow-brightness", "brightness-independent", "brightness-off", "sync-brightness", "restore-brightness"].contains(arguments[0]) || MonitorBrightnessCommand.level(arguments[0]) != nil) else {
+                print("Usage: MacXeneonEdgeTouchDriver [--check-hardware | status | setup-status | show-monitor-profiles | re-pair | cancel-pairing | layout-status | save-layout | restore-layout | brightness-status | remember-brightness | follow-brightness | brightness-independent | brightness-off | sync-brightness | restore-brightness | set-brightness:0..100]")
                 exit(arguments == ["--help"] ? EXIT_SUCCESS : EXIT_FAILURE)
             }
             do {

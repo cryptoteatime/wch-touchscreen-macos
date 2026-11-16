@@ -19,6 +19,8 @@ jobs:
         run: swift test
       - name: Standalone regression checks
         run: python3 Scripts/test-regressions.py
+      - name: Installer shutdown checks
+        run: python3 Scripts/test-launch-agent.py
       - name: Build and verify app bundle
         run: python3 Scripts/build-app.py
       - name: Check command interface without starting HID

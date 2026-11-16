@@ -27,6 +27,7 @@ public struct DisplaySnapshot: Equatable {
 
     /// Physical pixel height.
     public let pixelsHigh: Int
+    let isExternalPairingCandidate: Bool
 
     public let rotationDegrees: Int
     public let uuid: String
@@ -44,7 +45,8 @@ public struct DisplaySnapshot: Equatable {
         pixelsHigh: Int,
         rotationDegrees: Int = 0,
         uuid: String = "",
-        builtIn: Bool = false
+        builtIn: Bool = false,
+        isExternalPairingCandidate: Bool = true
     ) {
         self.displayID = displayID
         self.runtimeIdentifier = runtimeIdentifier.isEmpty ? "display-\(displayID)" : runtimeIdentifier
@@ -57,6 +59,7 @@ public struct DisplaySnapshot: Equatable {
         self.rotationDegrees = rotationDegrees
         self.uuid = uuid
         self.builtIn = builtIn
+        self.isExternalPairingCandidate = isExternalPairingCandidate && !builtIn
     }
 
     /// Public hardware key usable only after the pairing coordinator proves uniqueness.
@@ -66,7 +69,7 @@ public struct DisplaySnapshot: Equatable {
     }
 }
 
-/// Resolves and tracks the Xeneon Edge display by EDID and physical size.
+/// Resolves and tracks supported displays by EDID and optional resolution.
 public final class DisplayResolver {
     /// Callback fired after `refresh()` changes the resolved display.
     public var onDisplayChanged: ((CGRect?) -> Void)?
@@ -88,15 +91,17 @@ public final class DisplayResolver {
     }
 
     public convenience init(configuration: DriverConfiguration) {
-        self.init(configuration: configuration.display)
-        profiles = configuration.monitors
+        self.init(configuration: configuration.display, profiles: configuration.monitors,
+                  activeDisplayProvider: Self.activeDisplaySnapshots)
     }
 
     init(
         configuration: DriverConfiguration.Display = DriverConfiguration.defaults.display,
+        profiles: [MonitorProfile]? = nil,
         activeDisplayProvider: @escaping () -> [DisplaySnapshot]
     ) {
         self.configuration = configuration
+        self.profiles = profiles
         self.activeDisplayProvider = activeDisplayProvider
     }
 
@@ -139,38 +144,71 @@ public final class DisplayResolver {
 
     /// Returns all compatible displays from supplied snapshots.
     public func matchingDisplays(from displays: [DisplaySnapshot]) -> [DisplaySnapshot] {
+        let displays = displays.filter(\.isExternalPairingCandidate)
         if let profiles {
             let resolved = MonitorProfileRouting.resolved(profiles, displays: displays)
             return profiles.filter(\.touchEnabled).compactMap { resolved[$0.displayUUID] }
-                .sorted { $0.bounds.minX == $1.bounds.minX ? $0.bounds.minY < $1.bounds.minY : $0.bounds.minX < $1.bounds.minX }
+                .sorted(by: Self.isBeforeInArrangement)
         }
+        let matches: [DisplaySnapshot]
+        // Older installers wrote the default Corsair values to config.json.
+        // Treat those values as defaults so existing installs gain built-in profiles too.
+        if configuration == DriverConfiguration.defaults.display {
+            matches = SupportedDisplayCatalog.entries.flatMap { entry in
+                Self.matches(
+                    from: displays,
+                    vendorNumber: entry.vendorNumber,
+                    modelNumber: entry.modelNumber,
+                    preferredResolution: entry.preferredResolution
+                )
+            }
+        } else {
+            matches = Self.matches(
+                from: displays,
+                vendorNumber: configuration.vendorNumber,
+                modelNumber: configuration.modelNumber,
+                serialNumber: configuration.serialNumber,
+                preferredResolution: (configuration.expectedWidth, configuration.expectedHeight)
+            )
+        }
+
+        return matches.sorted(by: Self.isBeforeInArrangement)
+    }
+
+    static func isBeforeInArrangement(_ lhs: DisplaySnapshot, _ rhs: DisplaySnapshot) -> Bool {
+        if lhs.bounds.minX != rhs.bounds.minX { return lhs.bounds.minX < rhs.bounds.minX }
+        if lhs.bounds.minY != rhs.bounds.minY { return lhs.bounds.minY < rhs.bounds.minY }
+        return lhs.displayID < rhs.displayID
+    }
+
+    private static func matches(
+        from displays: [DisplaySnapshot],
+        vendorNumber: UInt32?,
+        modelNumber: UInt32?,
+        serialNumber: UInt32? = nil,
+        preferredResolution: (width: Int, height: Int)?
+    ) -> [DisplaySnapshot] {
         let vendorModelMatches = displays.filter { display in
-            display.vendorNumber == configuration.vendorNumber &&
-            display.modelNumber == configuration.modelNumber
+            display.vendorNumber == vendorNumber && display.modelNumber == modelNumber
         }
 
         let serialMatches: [DisplaySnapshot]
-        if let serialNumber = configuration.serialNumber {
+        if let serialNumber {
             serialMatches = vendorModelMatches.filter { $0.serialNumber == serialNumber }
         } else {
             serialMatches = vendorModelMatches
         }
 
-        let sizeMatches = serialMatches.filter { display in
-            display.pixelsWide == configuration.expectedWidth &&
-            display.pixelsHigh == configuration.expectedHeight
-        }
-
-        let matches = sizeMatches.isEmpty
-            ? (serialMatches.isEmpty ? vendorModelMatches : serialMatches)
-            : sizeMatches
-
-        return matches.sorted { lhs, rhs in
-            if lhs.bounds.origin.x != rhs.bounds.origin.x {
-                return lhs.bounds.origin.x < rhs.bounds.origin.x
+        if let preferredResolution {
+            let sizeMatches = serialMatches.filter { display in
+                display.pixelsWide == preferredResolution.width && display.pixelsHigh == preferredResolution.height
             }
-            return lhs.bounds.origin.y < rhs.bounds.origin.y
+            if !sizeMatches.isEmpty {
+                return sizeMatches
+            }
         }
+
+        return serialMatches.isEmpty ? vendorModelMatches : serialMatches
     }
 
     /// Returns live snapshots for every active CoreGraphics display.
@@ -205,7 +243,8 @@ public final class DisplayResolver {
             pixelsHigh: CGDisplayPixelsHigh(displayID),
             rotationDegrees: Int(CGDisplayRotation(displayID).rounded()),
             uuid: uuid.map { CFUUIDCreateString(nil, $0) as String } ?? "",
-            builtIn: CGDisplayIsBuiltin(displayID) != 0
+            builtIn: CGDisplayIsBuiltin(displayID) != 0,
+            isExternalPairingCandidate: CGDisplayIsBuiltin(displayID) == 0 && CGDisplayIsInMirrorSet(displayID) == 0
         )
     }
 

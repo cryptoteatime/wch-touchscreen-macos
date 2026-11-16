@@ -4,7 +4,7 @@
 
 WCH uses **Input Monitoring** to receive touchscreen reports and **Accessibility** to control the pointer and, when desktop memory is enabled, read window metadata and place windows. These are broad macOS permissions. The application filters touchscreen input to the configured WCH controllers.
 
-The app has no analytics or upload feature. Its control interface is a user-private Unix socket on the same Mac, not a network service. The source release is built locally and ad hoc signed unless a Developer ID identity is supplied; no Apple-notarized binary is currently provided.
+The app does not collect analytics or send reports automatically. After pairing an unlisted display, it may offer a compatibility report preview once per model. You choose whether to copy it and open a GitHub issue; submission happens in your browser. The generated report excludes unit serial numbers and runtime display IDs. Its control interface is a user-private Unix socket on the same Mac, not a network service. The source release is built locally and ad hoc signed unless a Developer ID identity is supplied; no Apple-notarized binary is currently provided.
 
 Optional brightness control reads the built-in display brightness, uses DDC/CI for compatible external panels, and exchanges local distributed notifications with DisplayLink Manager when a configured screen needs that connection. This is local inter-application communication, not a remote network connection. Only configured monitors are selected; ambiguous identities are skipped.
 

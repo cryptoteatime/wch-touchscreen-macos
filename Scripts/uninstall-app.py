@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import plistlib
 import shutil
-import subprocess
+from launch_agent import stop_agent
 
 label = "com.ajvwhite.MacXeneonEdgeTouchDriver"
 support = Path.home() / "Library/Application Support/MacXeneonEdgeTouchDriver"
@@ -18,7 +18,7 @@ if app and plistlib.loads((app / "Contents/Info.plist").read_bytes()).get("CFBun
     raise SystemExit("The configured app has an unexpected identity; no files were changed.")
 backup = support / "backups" / ("uninstalled-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
 backup.mkdir(parents=True, mode=0o700)
-subprocess.run(["launchctl", "bootout", "gui/" + str(os.getuid()) + "/" + label], capture_output=True)
+stop_agent("gui/" + str(os.getuid()), label)
 if app:
     shutil.move(str(app), backup / app.name)
 shutil.move(str(agent), backup / agent.name)

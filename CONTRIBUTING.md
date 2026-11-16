@@ -11,6 +11,7 @@ Preserve the [MIT license](LICENSE), upstream history, and [author credits](THIR
 ```sh
 swift test
 python3 Scripts/test-regressions.py
+python3 Scripts/test-launch-agent.py
 python3 Scripts/build-app.py
 ```
 
@@ -19,6 +20,10 @@ python3 Scripts/build-app.py
 The direct compiler build can be used when the local SwiftPM runtime is broken. If Apple's selected compiler and SDK are incompatible, set `WCH_SDK_PATH` to a compatible **already installed** SDK. The project does not download or modify toolchains.
 
 Automated tests do not establish physical touchscreen or macOS Resume compatibility. Document which hardware and actions were actually tested; distinguish process-identity simulations from a real reboot.
+
+## Upstream updates
+
+This project remains a GitHub fork of [mrnocreativity's driver](https://github.com/mrnocreativity/xeneon-wch-touchscreen-driver-macos). Review upstream changes on an integration branch, preserve the fork's monitor profiles and restoration behavior, and run all checks before merging into `main`. Do not reset this repository to upstream: it has additional features and a different app installer. See [integration notes](docs/upstream-integration.md) for intentional differences.
 
 ## Build and signing
 

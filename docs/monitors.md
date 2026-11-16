@@ -2,7 +2,7 @@
 
 [Compatibility guide](compatibility.md) · [Back to README](../README.md) · [Report a monitor](https://github.com/cryptoteatime/wch-touchscreen-macos/issues/new?template=compatibility-report.yml)
 
-Last reviewed: **November 1, 2026**.
+Last reviewed: **November 16, 2026**.
 
 Use **Command-F** to search for your brand, model, or product code. This list starts small and grows with sourced reports. Read the status beside a model before using it to choose a monitor.
 
@@ -62,6 +62,8 @@ The brand, exact model, and physical panel size have not been verified. **Type-c
 | Anmite | A156W03T | Needs Mac testing |
 | LOGICOM | NOMAD TOUCH | Needs Mac testing |
 | Verbatim | PMT-15 | Needs Mac testing |
+
+For **LOGICOM NOMAD TOUCH**, an [upstream issue](https://github.com/mrnocreativity/xeneon-wch-touchscreen-driver-macos/issues/1) initially suggested support, but the owner's [later comment](https://github.com/mrnocreativity/xeneon-wch-touchscreen-driver-macos/issues/1#issuecomment-6735320711) says it was not working yet. It remains unverified here pending a successful test report.
 
 Check your own unit using the [System Information steps](compatibility.md#find-your-monitor). The source lists other Verbatim models with different controller IDs, so a brand name alone is not enough. We have not verified UPC/EAN barcodes or additional retail variants for these entries.
 

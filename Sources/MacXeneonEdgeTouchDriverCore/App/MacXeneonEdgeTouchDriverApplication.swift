@@ -40,6 +40,10 @@ public final class MacXeneonEdgeTouchDriverApplication {
     private let stormDiagnosticQueue = BoundedDiagnosticQueue(capacity: 2)
     private let stormCaptureLog = DriverFileLog()
     private var compatibleDisplays: [DisplaySnapshot] = []
+    private var selectedTouchscreens: Set<CGDirectDisplayID>?
+    private var choosingTouchscreens = false
+    private var chooserDismissed = false
+    private var compatibilityReporter: CompatibilityReporter?
     private var pairingTarget: DisplaySnapshot?
     private var pairingAdvanceWork: DispatchWorkItem?
     private var reconciliationWork: DispatchWorkItem?
@@ -51,9 +55,11 @@ public final class MacXeneonEdgeTouchDriverApplication {
     private var activeGestureDevice: TouchDeviceIdentity?
     private var stuckGestureTimer: DispatchSourceTimer?
     private var signalSources: [DispatchSourceSignal] = []
+    private var permissionSetup: MousePermissionSetupWindow?
     private var didRegisterDisplayCallback = false
     private var isApplicationEventLoopRunning = false
     private var isRunning = false
+    private var exitStatus = EXIT_SUCCESS
     private var authority: [TouchDeviceIdentity: PairingAuthority] = [:]
     private var generation: UInt64 = 0
     private var challenge: PairingChallenge?
@@ -63,6 +69,8 @@ public final class MacXeneonEdgeTouchDriverApplication {
     private var observationLost = false
     private var sleeping = false
     private var calibrationPaused = false
+    private var requiresPhysicalPairing = false
+    private var automaticPairing: (device: TouchDeviceIdentity, display: DisplaySnapshot)?
     private var waitingForStormRecovery = false
     private var lastObservedDisplays: [DisplaySnapshot]?
     private var responsivenessPaused = false
@@ -86,6 +94,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
             requiredStablePairingTopologyObservations: 2,
             pairingTopologyRetryDelay: .milliseconds(750)
         )
+        compatibilityReporter = CompatibilityReporter()
     }
 
     public init(
@@ -122,38 +131,14 @@ public final class MacXeneonEdgeTouchDriverApplication {
     public func run() -> Int32 {
         guard !isRunning else { return EXIT_SUCCESS }
         isRunning = true
+        exitStatus = EXIT_SUCCESS
 
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.accessory)
         NSApp.finishLaunching()
         DriverLoggers.log(.notice, category: .lifecycle, "Starting independent multi-display touch driver.")
 
-        guard verifySyntheticEventPermission() else {
-            stop()
-            return EXIT_FAILURE
-        }
-        settingsController = DriverSettingsController()
-        desktopLayoutController = DesktopLayoutController(configuration: configuration)
-        monitorBrightnessController = MonitorBrightnessController(configuration: configuration)
-
-        // Keep coordinate captures out of the operational log so a storm cannot
-        // crowd out several days of lifecycle/pairing evidence.
-        let capturePath = configuration.diagnostics.fileLogPath.flatMap { $0.isEmpty ? nil : $0 + ".storms" }
-        do {
-            try stormCaptureLog.configure(fileLogPath: capturePath,
-                maxBytes: min(configuration.diagnostics.fileLogMaxBytes, 1_048_576))
-        } catch {
-            DriverLoggers.log(.warning, category: .lifecycle, "Storm capture logging unavailable: \(error.localizedDescription)")
-        }
-
-        registerDisplayReconfigurationCallback()
-        guard didRegisterDisplayCallback else {
-            stop()
-            return EXIT_FAILURE
-        }
-        registerScreenParametersObserver()
         installSignalHandlers()
-
         do {
             try control.start { [weak self] command, reply in
                 guard let self else { reply("{\"error\":\"Driver stopped\"}"); return }
@@ -169,13 +154,64 @@ public final class MacXeneonEdgeTouchDriverApplication {
                     brightness.request(command, reply: reply)
                     return
                 }
-                self.gestureQueue.async { reply(self.handleControlCommand(command)) }
+                self.gestureQueue.async {
+                    if command == "setup-status" {
+                        let state = self.observationGate.isMonitoring ? self.touchSetupState : "privacyRequired"
+                        let result = self.json(["state": state])
+                        // Let the main thread finish any queued overlay dismissal before the installer opens Done.
+                        DispatchQueue.main.async { reply(result) }
+                    } else {
+                        guard self.observationGate.isMonitoring else {
+                            reply("{\"error\":\"Driver setup is incomplete\"}")
+                            return
+                        }
+                        reply(self.handleControlCommand(command))
+                    }
+                }
             }
+        } catch {
+            DriverLoggers.log(.fault, category: .lifecycle, "Could not start driver controls: \(error.localizedDescription)")
+            stop()
+            return EXIT_FAILURE
+        }
+        settingsController = DriverSettingsController()
+        desktopLayoutController = DesktopLayoutController(configuration: configuration)
+        monitorBrightnessController = MonitorBrightnessController(configuration: configuration)
+        if DriverPrivacyPermission.missing.isEmpty {
+            guard startDriver() else {
+                stop()
+                return EXIT_FAILURE
+            }
+        } else {
+            showPermissionSetup()
+        }
+
+        isApplicationEventLoopRunning = true
+        NSApp.run()
+        isApplicationEventLoopRunning = false
+        return exitStatus
+    }
+
+    private func startDriver() -> Bool {
+        // Keep coordinate captures out of the operational log so a storm cannot
+        // crowd out several days of lifecycle/pairing evidence.
+        let capturePath = configuration.diagnostics.fileLogPath.flatMap { $0.isEmpty ? nil : $0 + ".storms" }
+        do {
+            try stormCaptureLog.configure(fileLogPath: capturePath,
+                maxBytes: min(configuration.diagnostics.fileLogMaxBytes, 1_048_576))
+        } catch {
+            DriverLoggers.log(.warning, category: .lifecycle, "Storm capture logging unavailable: \(error.localizedDescription)")
+        }
+
+        registerDisplayReconfigurationCallback()
+        guard didRegisterDisplayCallback else { return false }
+        registerScreenParametersObserver()
+
+        do {
             try hidMonitor.start()
         } catch {
             DriverLoggers.log(.fault, category: .lifecycle, "Could not start HID monitor: \(error.localizedDescription)")
-            stop()
-            return EXIT_FAILURE
+            return false
         }
 
         scheduleDisplayReconciliation(reason: "startup", delay: .milliseconds(500))
@@ -183,10 +219,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
         desktopLayoutController?.start()
         monitorBrightnessController?.start()
 
-        isApplicationEventLoopRunning = true
-        NSApp.run()
-        isApplicationEventLoopRunning = false
-        return EXIT_SUCCESS
+        return true
     }
 
     public func stop() {
@@ -194,9 +227,16 @@ public final class MacXeneonEdgeTouchDriverApplication {
         isRunning = false
         desktopLayoutController?.stop()
         monitorBrightnessController?.stop()
+        control.stop()
+        if let permissionSetup {
+            permissionSetup.dismiss()
+            self.permissionSetup = nil
+            signalSources.removeAll()
+            stopApplicationEventLoop()
+            return
+        }
         observationGate.stop()
         hidMonitor.stop()
-        control.stop()
         workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         workspaceObservers.removeAll()
         unregisterDisplayReconfigurationCallback()
@@ -277,7 +317,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
     }
 
     func handleDeviceRemoval(_ device: TouchDeviceIdentity) {
-        if let display = pairingStore.resolveDisplay(for: device, connectedDevices: connectedDevices, displays: compatibleDisplays) {
+        if let display = resolvedDisplay(for: device) {
             monitorBrightnessController?.connectionInterrupted(displayID: display.displayID, reason: "Paired touch USB interface disconnected")
         }
         if sessions[device]?.validator.isStormActive == true { logStormCapture(for: device, at: .now()) }
@@ -501,17 +541,13 @@ public final class MacXeneonEdgeTouchDriverApplication {
         compatibleDisplays = displayResolver.matchingDisplays(from: activeDisplays)
         do {
             try pairingStore.rememberVerifiedRuntimePairings(
-                connectedDevices: connectedDevices, displays: compatibleDisplays
+                connectedDevices: connectedDevices, displays: pairingDisplays
             )
         } catch {
             DriverLoggers.log(.error, category: .display, "Could not remember verified connections: \(error.localizedDescription)")
         }
         let resolvedDisplays = Dictionary(uniqueKeysWithValues: connectedDevices.compactMap { device in
-            pairingStore.resolveDisplay(
-                for: device,
-                connectedDevices: connectedDevices,
-                displays: compatibleDisplays
-            ).map { (device, $0) }
+            resolvedDisplay(for: device).map { (device, $0) }
         })
 
         for device in connectedDevices {
@@ -525,7 +561,10 @@ public final class MacXeneonEdgeTouchDriverApplication {
             }
             sessions[device]?.mapperStore.currentMapper = mapper
             if display != nil {
-                setAuthority(device, phase: .active, reason: "Verified association and current endpoints")
+                let reason = automaticPairing?.device == device
+                    ? "Automatically paired the only compatible display and controller"
+                    : "Verified association and current endpoints"
+                setAuthority(device, phase: .active, reason: reason)
                 if let display, brightnessAwaitingTouch.remove(device) != nil {
                     monitorBrightnessController?.connectionInterrupted(displayID: display.displayID, reason: "Paired touch USB interface is ready again")
                 }
@@ -551,36 +590,68 @@ public final class MacXeneonEdgeTouchDriverApplication {
         beginPairingIfNeeded(resolvedDisplays: resolvedDisplays)
     }
 
+    private func resolvedDisplay(for device: TouchDeviceIdentity) -> DisplaySnapshot? {
+        if let automaticPairing, automaticPairing.device == device {
+            return automaticPairing.display
+        }
+        return pairingStore.resolveDisplay(for: device, connectedDevices: connectedDevices, displays: pairingDisplays)
+    }
+
+    private var allowsDisplayDiscovery: Bool {
+        configuration.monitors == nil && configuration.display == DriverConfiguration.defaults.display
+    }
+
+    private var pairingDisplays: [DisplaySnapshot] {
+        if allowsDisplayDiscovery {
+            return (lastObservedDisplays ?? compatibleDisplays).filter(\.isExternalPairingCandidate)
+        }
+        return compatibleDisplays
+    }
+
     private func beginPairingIfNeeded(resolvedDisplays: [TouchDeviceIdentity: DisplaySnapshot]? = nil) {
         guard !calibrationPaused, !sleeping, !configurationPending, !observationLost,
               !responsivenessPaused, observationGate.isFresh else { return }
         if waitForQuietPairingIfNeeded() { return }
         waitingForStormRecovery = false
-        if challenge != nil { return }
+        if challenge != nil || choosingTouchscreens { return }
         let resolved = resolvedDisplays ?? Dictionary(uniqueKeysWithValues: connectedDevices.compactMap { device in
-            pairingStore.resolveDisplay(
-                for: device,
-                connectedDevices: connectedDevices,
-                displays: compatibleDisplays
-            ).map { (device, $0) }
+            resolvedDisplay(for: device).map { (device, $0) }
         })
         let unresolved = connectedDevices
             .filter { resolved[$0] == nil }
             .sorted { $0.locationID < $1.locationID }
 
         let usedDisplayIDs = Set(resolved.values.map(\.displayID))
-        let candidates = compatibleDisplays.filter { !usedDisplayIDs.contains($0.displayID) }
+        let usesDefaultProfiles = allowsDisplayDiscovery
+        let available = pairingDisplays.filter {
+            $0.isExternalPairingCandidate && !usedDisplayIDs.contains($0.displayID)
+        }
+        let candidates: [DisplaySnapshot]
+        if let selectedTouchscreens {
+            candidates = available.filter { selectedTouchscreens.contains($0.displayID) }
+        } else {
+            candidates = pairingDisplays.filter { display in
+                !usedDisplayIDs.contains(display.displayID) &&
+                    (compatibleDisplays.contains(display) ||
+                        (usesDefaultProfiles && display.isExternalPairingCandidate && pairingStore.recognizesModel(of: display)))
+            }
+        }
 
         guard !unresolved.isEmpty else {
+            if !resolved.isEmpty { requiresPhysicalPairing = false }
             pairingTarget = nil
             overlayPresentationAttempt = 0
             resetPairingTopologyStability()
             pairingTopologyWaitDescription = nil
             pairingOverlay.hide()
+            compatibilityReporter?.presentPending()
             return
         }
 
-        guard unresolved.count == candidates.count, let target = candidates.first else {
+        let needsChooser = usesDefaultProfiles && selectedTouchscreens == nil &&
+            candidates.count != unresolved.count && available.count >= unresolved.count
+        if needsChooser, chooserDismissed { return }
+        guard needsChooser || (candidates.count == unresolved.count && !candidates.isEmpty) else {
             for device in unresolved {
                 setAuthority(device, phase: .waitingForHardware, reason: "Waiting for complete controller/display topology")
             }
@@ -588,6 +659,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
             overlayPresentationAttempt = 0
             resetPairingTopologyStability()
             pairingOverlay.hide()
+            compatibilityReporter?.presentPending()
             waitForPairingTopology(
                 "Waiting for complete pairing topology: \(unresolved.count) unresolved controller(s), \(candidates.count) unused compatible display(s)."
             )
@@ -596,7 +668,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
 
         let topologySignature = PairingTopologySignature(
             devices: connectedDevices,
-            displays: compatibleDisplays
+            displays: pairingDisplays
         )
         if pairingTopologySignature == topologySignature {
             stablePairingTopologyObservationCount += 1
@@ -614,9 +686,29 @@ public final class MacXeneonEdgeTouchDriverApplication {
         }
         pairingTopologyWaitDescription = nil
 
-        let total = min(connectedDevices.count, compatibleDisplays.count)
-        let step = min(resolved.count + 1, total)
-        guard pairingOverlay.show(on: target, step: step, total: total) else {
+        if needsChooser {
+            showTouchscreenChooser(available: available, count: unresolved.count)
+            return
+        }
+        guard let target = candidates.min(by: DisplayResolver.isBeforeInArrangement) else { return }
+
+        if selectedTouchscreens == nil, !requiresPhysicalPairing, connectedDevices.count == 1,
+           compatibleDisplays.contains(target),
+           let device = unresolved.first, let session = sessions[device] {
+            // A unique live topology is enough to route input, but it is not
+            // physical evidence to save or reuse when more endpoints appear.
+            automaticPairing = (device, target)
+            inputReadyAt = DispatchTime.now().uptimeNanoseconds
+            session.resetHealthyInput()
+            session.awaitingFreshDown = true
+            refreshSessionMapper(for: device, display: target)
+            setAuthority(device, phase: .active, reason: "Automatically paired the only compatible display and controller")
+            resetPairingTopologyStability()
+            return
+        }
+
+        let total = resolved.count + unresolved.count
+        guard pairingOverlay.show(on: target, step: resolved.count + 1, total: total) else {
             pairingTarget = nil
             schedulePairingOverlayRetry()
             return
@@ -627,6 +719,48 @@ public final class MacXeneonEdgeTouchDriverApplication {
         challenge = PairingChallenge(readyAt: DispatchTime.now().uptimeNanoseconds, generation: generation)
         for device in unresolved { setAuthority(device, phase: .calibrating, reason: "Touch and release the visible target") }
         DriverLoggers.log(.notice, category: .display, "Waiting for a raw touch on display ID \(target.displayID).")
+    }
+
+    private func showTouchscreenChooser(available: [DisplaySnapshot], count: Int) {
+        let revision = observationGate.revision
+        let expectedGeneration = generation
+        let eligible = Set(available.map(\.displayID))
+        choosingTouchscreens = pairingOverlay.chooseDisplays(
+            from: pairingDisplays, eligible: eligible, count: count
+        ) { [weak self] selection in
+            self?.gestureQueue.async { [weak self] in
+                guard let self, self.choosingTouchscreens, self.generation == expectedGeneration,
+                      self.observationGate.revision == revision else { return }
+                guard let selection, selection.count == count, selection.isSubset(of: eligible) else {
+                    self.choosingTouchscreens = false
+                    self.chooserDismissed = true
+                    self.compatibilityReporter?.presentPending()
+                    return
+                }
+                self.pairingOverlay.explainVerification { [weak self] confirmed in
+                    self?.gestureQueue.async { [weak self] in
+                        guard let self, self.choosingTouchscreens, self.generation == expectedGeneration,
+                              self.observationGate.revision == revision else { return }
+                        self.choosingTouchscreens = false
+                        guard confirmed else {
+                            self.chooserDismissed = true
+                            self.compatibilityReporter?.presentPending()
+                            return
+                        }
+                        self.selectedTouchscreens = selection
+                        self.beginPairingIfNeeded()
+                    }
+                }
+            }
+        }
+        if choosingTouchscreens {
+            overlayPresentationAttempt = 0
+            for device in connectedDevices where resolvedDisplay(for: device) == nil {
+                setAuthority(device, phase: .needsPairing, reason: "Select your touchscreens with a mouse or trackpad")
+            }
+        } else {
+            schedulePairingOverlayRetry()
+        }
     }
 
     private func handlePairingTouch(_ event: DeviceTouchEvent) {
@@ -643,7 +777,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
         let existingDisplayIsActive = pairingStore.resolveDisplay(
             for: event.device,
             connectedDevices: connectedDevices,
-            displays: compatibleDisplays
+            displays: pairingDisplays
         ) != nil
         guard !existingDisplayIsActive else {
             DriverLoggers.log(.debug, category: .display, "Ignoring pairing touch from an already resolved controller.")
@@ -654,7 +788,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
         guard pairingOverlay.isReady(on: target), observationGate.allowsRouting,
               observationGate.revision == observationRevision,
               pairingTopologySignature == PairingTopologySignature(
-                devices: connectedDevices, displays: displayResolver.matchingDisplays(from: currentDisplays)),
+                devices: connectedDevices, displays: pairingDisplays),
               lastObservedDisplays == currentDisplays else {
             suspendRouting(reason: "Calibration display changed")
             scheduleDisplayReconciliation(reason: "Calibration placement revalidation")
@@ -684,7 +818,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
                 device: event.device,
                 to: target,
                 connectedDevices: connectedDevices,
-                displays: compatibleDisplays
+                displays: pairingDisplays
             )
             guard observationGate.allowsRouting, observationGate.revision == observationRevision else {
                 try pairingStore.remove(device: event.device)
@@ -699,11 +833,19 @@ public final class MacXeneonEdgeTouchDriverApplication {
             DriverLoggers.log(.notice, category: .display, "Paired controller \(event.device.hexadecimalLocationID) to display ID \(target.displayID).")
             refreshSessionMapper(for: event.device, display: target)
             setAuthority(event.device, phase: .active, reason: "Physical target contact verified")
+            if allowsDisplayDiscovery, !SupportedDisplayCatalog.entries.contains(where: {
+                $0.vendorNumber == target.vendorNumber && $0.modelNumber == target.modelNumber
+            }) {
+                do { try pairingStore.rememberModel(of: target) }
+                catch { DriverLoggers.log(.error, category: .display, "Could not remember the touchscreen model: \(error.localizedDescription)") }
+                compatibilityReporter?.enqueue(target)
+            }
 
             pairingAdvanceWork?.cancel()
             let expectedGeneration = generation
             let work = DispatchWorkItem { [weak self] in
                 guard let self, self.generation == expectedGeneration else { return }
+                self.pairingAdvanceWork = nil
                 self.beginPairingIfNeeded()
             }
             pairingAdvanceWork = work
@@ -875,9 +1017,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
     @discardableResult
     private func waitForQuietPairingIfNeeded() -> Bool {
         guard !calibrationPaused else { return false }
-        let unresolved = connectedDevices.filter {
-            pairingStore.resolveDisplay(for: $0, connectedDevices: connectedDevices, displays: compatibleDisplays) == nil
-        }
+        let unresolved = connectedDevices.filter { resolvedDisplay(for: $0) == nil }
         guard unresolved.contains(where: { sessions[$0]?.validator.isStormActive == true }) else { return false }
         if !waitingForStormRecovery {
             waitingForStormRecovery = true
@@ -892,6 +1032,9 @@ public final class MacXeneonEdgeTouchDriverApplication {
 
     private func suspendRouting(reason: String) {
         observationGate.suspend()
+        automaticPairing = nil
+        selectedTouchscreens = nil
+        chooserDismissed = false
         generation &+= 1
         reconciliationWork?.cancel()
         cancelPairingPresentation()
@@ -1017,6 +1160,15 @@ public final class MacXeneonEdgeTouchDriverApplication {
         gestureQueue.asyncAfter(deadline: .now() + .seconds(2), execute: work)
     }
 
+    var touchSetupState: String {
+        guard lastObservedDisplays != nil, observationGate.allowsRouting else { return "discovering" }
+        if chooserDismissed || calibrationPaused { return "cancelled" }
+        guard !connectedDevices.isEmpty else { return "waitingForHardware" }
+        guard !choosingTouchscreens, challenge == nil, pairingAdvanceWork == nil,
+              connectedDevices.allSatisfy({ authority[$0]?.phase == .active }) else { return "pairing" }
+        return "ready"
+    }
+
     func handleControlCommand(_ command: String) -> String {
         switch command {
         case "status": break
@@ -1028,12 +1180,14 @@ public final class MacXeneonEdgeTouchDriverApplication {
                 return json(["error": "Could not persist pairing reset: \(error.localizedDescription)"])
             }
             calibrationPaused = false
+            requiresPhysicalPairing = true
             // Reply before presentation work so the command does not wait for AppKit.
             scheduleDisplayReconciliation(reason: "Canonical re-pair command")
         case "cancel-pairing":
             calibrationPaused = true
             waitingForStormRecovery = false
             cancelPairingPresentation()
+            compatibilityReporter?.presentPending()
             for device in connectedDevices where authority[device]?.phase != .active {
                 setAuthority(device, phase: .suspended, reason: "Calibration cancelled; use re-pair to resume")
             }
@@ -1041,7 +1195,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
         }
         let records: [[String: Any]] = connectedDevices.sorted { $0.locationID < $1.locationID }.map { device in
             let current = authority[device]
-            let display = pairingStore.resolveDisplay(for: device, connectedDevices: connectedDevices, displays: compatibleDisplays)
+            let display = resolvedDisplay(for: device)
             var record: [String: Any] = [
                 "controller": device.hexadecimalLocationID,
                 "state": current?.phase.rawValue ?? "waitingForHardware",
@@ -1184,6 +1338,7 @@ public final class MacXeneonEdgeTouchDriverApplication {
 
     private func cancelPairingPresentation() {
         challenge = nil
+        choosingTouchscreens = false
         for device in connectedDevices where authority[device]?.phase == .calibrating {
             setAuthority(device, phase: .needsPairing, reason: "Awaiting a fresh calibration presentation")
         }
@@ -1233,15 +1388,26 @@ public final class MacXeneonEdgeTouchDriverApplication {
         }
     }
 
-    private func verifySyntheticEventPermission() -> Bool {
-        if CGPreflightPostEventAccess() { return true }
+    private func showPermissionSetup() {
         logPermissionIdentity()
-        if CGRequestPostEventAccess() { return true }
-        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        let trusted = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
-        if trusted || CGPreflightPostEventAccess() { return true }
-        DriverLoggers.log(.fault, category: .lifecycle, "Synthetic mouse event permission is not granted. Grant Accessibility and restart the driver.")
-        return false
+        DriverLoggers.log(.notice, category: .lifecycle, "Required privacy access is missing. Waiting in startup setup.")
+        let setup = MousePermissionSetupWindow(
+            onGranted: { [weak self] in
+                guard let self, let setup = self.permissionSetup else { return }
+                setup.dismiss()
+                self.permissionSetup = nil
+                if !self.startDriver() {
+                    self.exitStatus = EXIT_FAILURE
+                    self.stop()
+                }
+            },
+            onQuit: { [weak self] in
+                guard let self, self.permissionSetup != nil else { return }
+                self.stop()
+            }
+        )
+        permissionSetup = setup
+        setup.show()
     }
 
     private func logPermissionIdentity() {
@@ -1279,6 +1445,7 @@ final class ObservationGate {
     }
     private var observationRevision: UInt64 = 0
     var revision: UInt64 { lock.lock(); defer { lock.unlock() }; return observationRevision }
+    var isMonitoring: Bool { lock.lock(); defer { lock.unlock() }; return monitoring && !stopped }
     var isFresh: Bool {
         lock.lock(); defer { lock.unlock() }
         return freshLocked()
